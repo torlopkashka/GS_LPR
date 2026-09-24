@@ -80,7 +80,7 @@ class TelegramConfig:
 
 @dataclass
 class HealthcheckConfig:
-    # Внешний «сторож» (например healthchecks.io): сервер раз в interval секунд
+    # Внешний «сторож» (Uptime Kuma или healthchecks.io): сервер раз в interval секунд
     # отправляет сюда запрос. Если запросы прекратились (пропал интернет или
     # выключился ПК), сторож сам пришлёт уведомление в Telegram.
     url: str = ""

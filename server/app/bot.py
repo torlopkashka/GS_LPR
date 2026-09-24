@@ -7,7 +7,7 @@
   * после восстановления связи бот сам присылает отчёт: сколько не было
     интернета и что происходило у ворот за это время. Команды «открыть»,
     накопившиеся за время обрыва, не выполняются;
-  * внешний «сторож» (healthchecks.io): если сервер перестал выходить на связь,
+  * внешний «сторож» (Uptime Kuma / healthchecks.io): если сервер перестал выходить на связь,
     сторож сам пришлёт уведомление в Telegram (см. HealthcheckConfig).
 """
 
@@ -463,9 +463,19 @@ class TelegramBot:
                               f"Нет видео с камеры «{w.cam.name}»", f"Камера «{w.cam.name}» снова работает")
 
     async def _ping_healthcheck(self):
+        """Сигнал внешнему сторожу. Поддерживаются два формата:
+        Uptime Kuma (адрес содержит /api/push/) и healthchecks.io (и совместимые).
+        """
         problems = self.problems()
-        url = self.cfg.healthcheck.url.rstrip("/") + ("/fail" if problems else "")
+        msg = "; ".join(problems) or "OK"
+        base = self.cfg.healthcheck.url.strip()
         try:
-            await self.client.post(url, content="; ".join(problems) or "ok", timeout=10)
+            if "/api/push/" in base:
+                url = base.split("?")[0]
+                await self.client.get(url, params={"status": "down" if problems else "up", "msg": msg},
+                                      timeout=10)
+            else:
+                url = base.rstrip("/") + ("/fail" if problems else "")
+                await self.client.post(url, content=msg, timeout=10)
         except Exception as e:
-            log.debug("Healthcheck недоступен: %s", e)
+            log.debug("Сторож недоступен: %s", e)

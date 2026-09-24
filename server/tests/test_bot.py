@@ -124,3 +124,33 @@ def test_no_sends_while_offline(bot):
     bot.offline_since = time.time()
     run(bot.broadcast("test"))
     assert texts(bot) == []
+
+
+class FakeHttp:
+    def __init__(self):
+        self.calls = []
+
+    async def get(self, url, params=None, **kw):
+        self.calls.append(("GET", url, params))
+
+    async def post(self, url, content=None, **kw):
+        self.calls.append(("POST", url, content))
+
+
+def test_healthcheck_formats(bot):
+    bot.client = FakeHttp()
+    bot.cfg.healthcheck.url = "https://mon.example.ru/api/push/AbC123?status=up&msg=OK&ping="
+    run(bot._ping_healthcheck())  # агент не на связи -> down
+    method, url, params = bot.client.calls[-1]
+    assert method == "GET" and url == "https://mon.example.ru/api/push/AbC123"
+    assert params["status"] == "down" and "агент" in params["msg"]
+    bot.hub.ws = object()
+    run(bot._ping_healthcheck())
+    assert bot.client.calls[-1][2]["status"] == "up"
+
+    bot.cfg.healthcheck.url = "https://hc-ping.com/uuid"
+    run(bot._ping_healthcheck())
+    assert bot.client.calls[-1][:2] == ("POST", "https://hc-ping.com/uuid")
+    bot.hub.ws = None
+    run(bot._ping_healthcheck())
+    assert bot.client.calls[-1][1] == "https://hc-ping.com/uuid/fail"
