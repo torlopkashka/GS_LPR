@@ -19,6 +19,8 @@ from .site import SiteState
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("vps")
+# httpx пишет в журнал полный адрес запроса, а в адресе вебхука Битрикс24 — секретный ключ
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 cfg = load_config()
 site = SiteState(cfg.data_dir, cfg.site_online_timeout, cfg.op_ttl)

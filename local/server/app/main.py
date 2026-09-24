@@ -30,6 +30,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("lpr")
+logging.getLogger("httpx").setLevel(logging.WARNING)  # не писать в журнал адреса запросов с токенами
 
 BASE = Path(__file__).parent
 cfg = load_config()

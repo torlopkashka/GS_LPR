@@ -209,3 +209,45 @@ def test_expired_op(env):
     op["ts"] -= 8 * 86400
     ops = site_sync(bot)
     assert ops == [] and "не выходил на связь" in portal.sent[-1][1]
+
+
+# --- реальные события портала: пустые объекты приходят как [] ---------------------------
+def raw_event(data, kind="ONIMBOTV2COMMANDADD"):
+    return {"eventId": 1, "type": kind, "date": "2026-09-24T23:50:24+03:00", "data": data}
+
+
+def test_event_with_empty_chat_list_private_dialog(env):
+    bot, site, portal = env
+    run(bot.setup())
+    ev = raw_event({"command": {"command": "/status", "params": ""}, "chat": [],
+                    "user": {"id": ADMIN, "name": "Аня", "bot": False}, "message": {"id": 5, "text": "/status"}})
+    run(bot.handle(ev))
+    dialog, text, _ = portal.sent[-1]
+    assert dialog == str(ADMIN) and "ни разу не выходил на связь" in text
+
+
+def test_event_with_empty_chat_list_group_chat(env):
+    bot, site, portal = env
+    run(bot.setup())  # чат «Ворота» — chat42
+    ev = raw_event({"command": {"command": "/list"}, "chat": [],
+                    "user": {"id": ADMIN, "name": "Аня"}, "message": {"id": 5, "chatId": 42, "text": "/list"}})
+    run(bot.handle(ev))
+    assert portal.sent[-1][0] == "chat42"
+
+
+def test_event_with_empty_command_uses_message_text(env):
+    bot, site, portal = env
+    run(bot.setup())
+    ev = raw_event({"command": [], "chat": {"dialogId": "chat42"}, "user": {"id": ADMIN},
+                    "message": {"text": "/add А123ВС77 Иванов"}})
+    run(bot.handle(ev))
+    assert site.ops[-1]["cmd"] == "add" and site.ops[-1]["args"] == "А123ВС77 Иванов"
+
+
+def test_event_with_list_data_is_ignored(env):
+    bot, _, portal = env
+    run(bot.setup())
+    n = len(portal.sent)
+    run(bot.handle(raw_event([])))
+    run(bot.handle(raw_event({"chat": [], "user": [], "message": []})))
+    assert len(portal.sent) == n  # не падает и никому не отвечает

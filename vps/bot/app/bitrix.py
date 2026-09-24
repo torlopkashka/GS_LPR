@@ -290,7 +290,7 @@ class Bitrix24Bot:
                     try:
                         await self.handle(ev)
                     except Exception:
-                        log.exception("Ошибка обработки события")
+                        log.exception("Ошибка обработки события: %s", json.dumps(ev, ensure_ascii=False)[:2000])
                 if res.get("nextOffset"):
                     self.state["offset"] = res["nextOffset"]
                     self._save_state()
@@ -305,27 +305,62 @@ class Bitrix24Bot:
                     await asyncio.sleep(5)
             await asyncio.sleep(self.cfg.poll_interval)
 
-    async def handle(self, ev: dict):
-        kind, data = ev.get("type"), ev.get("data", {})
-        user = data.get("user", {})
-        if user.get("bot"):
-            return
-        dialog = data.get("chat", {}).get("dialogId") or data.get("dialogId", "")
-        uid = int(user.get("id") or 0)
-        who = user.get("name") or user.get("firstName") or f"id {uid}"
+    def parse_event(self, ev: dict) -> dict | None:
+        """Разбирает событие imbot.v2 в {kind, cmd, params, uid, who, is_bot, dialog}.
 
-        if kind == "ONIMBOTV2JOINCHAT":
-            await self.send(dialog, f"Здравствуйте! Я бот ворот.\n\n{HELP}")
-            return
+        Портал Битрикс24 кодирует пустые объекты как пустой список «[]», а часть полей
+        в реальных событиях может отсутствовать, поэтому каждое поле читается осторожно.
+        """
+        def obj(x) -> dict:
+            return x if isinstance(x, dict) else {}
+
+        kind = ev.get("type")
+        data = obj(ev.get("data"))
+        user, chat, msg = obj(data.get("user")), obj(data.get("chat")), obj(data.get("message"))
+        uid = int(user.get("id") or msg.get("authorId") or 0)
+        dialog = str(chat.get("dialogId") or data.get("dialogId") or "")
+        if not dialog:
+            chat_id = chat.get("id") or msg.get("chatId")
+            chat_type = chat.get("type")
+            if chat_id and self.dialog_id == f"chat{chat_id}":
+                dialog = self.dialog_id                 # наш групповой чат «Ворота»
+            elif chat_id and chat_type and chat_type != "private":
+                dialog = f"chat{chat_id}"
+            elif uid:
+                dialog = str(uid)                       # личный диалог: dialogId = ID сотрудника
         if kind == "ONIMBOTV2COMMANDADD":
-            c = data.get("command", {})
-            cmd, params = c.get("command", "").lstrip("/").lower(), (c.get("params") or "").strip()
+            c = obj(data.get("command"))
+            cmd = str(c.get("command") or "").lstrip("/").lower()
+            params = str(c.get("params") or "").strip()
+            if not cmd:  # формат команды неизвестен — берём из текста сообщения
+                text = str(msg.get("text") or "").strip()
+                cmd, _, params = text.lstrip("/").partition(" ")
+                cmd, params = cmd.lower(), params.strip()
         elif kind == "ONIMBOTV2MESSAGEADD":
-            text = (data.get("message", {}).get("text") or "").strip()
+            text = str(msg.get("text") or "").strip()
             if text.startswith("/"):
-                return  # команды приходят отдельным событием ONIMBOTV2COMMANDADD
+                return None  # команды приходят отдельным событием ONIMBOTV2COMMANDADD
             cmd, params = "help", ""
+        elif kind == "ONIMBOTV2JOINCHAT":
+            cmd, params = "join", ""
         else:
+            return None
+        return {"kind": kind, "cmd": cmd, "params": params, "uid": uid, "dialog": dialog,
+                "who": user.get("name") or user.get("firstName") or f"id {uid}",
+                "is_bot": bool(user.get("bot"))}
+
+    async def handle(self, ev: dict):
+        p = self.parse_event(ev)
+        if p is None or p["is_bot"]:
+            return
+        if not p["dialog"]:
+            log.warning("Не удалось определить диалог для ответа, событие: %s",
+                        json.dumps(ev, ensure_ascii=False)[:2000])
+            return
+        log.info("Команда /%s от %s (id %s) в %s", p["cmd"], p["who"], p["uid"], p["dialog"])
+        cmd, params, uid, who, dialog = p["cmd"], p["params"], p["uid"], p["who"], p["dialog"]
+        if cmd == "join":
+            await self.send(dialog, f"Здравствуйте! Я бот ворот.\n\n{HELP}")
             return
 
         if uid not in self.cfg.user_ids:
