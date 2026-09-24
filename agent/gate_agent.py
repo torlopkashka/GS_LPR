@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Агент управления воротами.
 
-Запускается на компьютере у ворот (мини-ПК, Raspberry Pi, старый ноутбук).
-Держит исходящее WebSocket-соединение с сервером распознавания и по команде
-«open» замыкает реле на заданное время.
+Запускается на том же компьютере, что и сервер распознавания, но не в Docker,
+а прямо в Windows: Docker Desktop не даёт контейнерам доступа к USB-реле.
+Держит WebSocket-соединение с сервером (ws://127.0.0.1:8000) и по команде
+«open» замыкает реле на заданное время. Интернет для этого не нужен.
 
 Поддерживаемые способы управления (параметр driver в agent.yaml):
   serial   — USB-реле на CH340 (LCUS-1/2/4 и аналоги, «виртуальный COM-порт»)
@@ -20,6 +21,7 @@ import argparse
 import asyncio
 import json
 import logging
+import logging.handlers
 import platform
 import socket
 import subprocess
@@ -263,10 +265,15 @@ def main():
     ap.add_argument("-c", "--config", default="agent.yaml")
     ap.add_argument("--test", action="store_true", help="подать один импульс и выйти")
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--log-file", help="писать журнал в файл (с ротацией)")
     args = ap.parse_args()
+    handlers = [logging.StreamHandler()]
+    if args.log_file:
+        handlers.append(logging.handlers.RotatingFileHandler(
+            args.log_file, maxBytes=2_000_000, backupCount=3, encoding="utf-8"))
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
-    with open(args.config, encoding="utf-8") as f:
+                        format="%(asctime)s %(levelname)s %(message)s", handlers=handlers)
+    with open(args.config, encoding="utf-8-sig") as f:
         cfg = yaml.safe_load(f)
     if args.test:
         drv = make_driver(cfg)

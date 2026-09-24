@@ -1,0 +1,6 @@
+# Скрипты для контейнера должны остаться с LF даже при клонировании на Windows
+*.sh   text eol=lf
+Dockerfile text eol=lf
+# Скрипты Windows — с CRLF
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf

@@ -20,16 +20,17 @@ log = logging.getLogger("lpr.gate")
 
 
 class AgentHub:
-    """Агент (компьютер у ворот) держит постоянное WebSocket-соединение с сервером.
+    """Агент ворот держит постоянное WebSocket-соединение с сервером.
 
-    Соединение исходящее со стороны агента, поэтому на объекте не нужен белый IP
-    и проброс портов.
+    Агент запускается прямо в Windows (не в Docker), потому что ему нужен доступ
+    к USB-реле, и подключается к серверу по ws://127.0.0.1:8000/ws/agent.
     """
 
     def __init__(self):
         self.ws: WebSocket | None = None
         self.info: dict = {}
         self.connected_at = 0.0
+        self.disconnected_at = time.time()  # «не на связи» считаем от старта сервера
         self.last_seen = 0.0
         self._pending: dict[str, asyncio.Future] = {}
 
@@ -66,6 +67,7 @@ class AgentHub:
         finally:
             if self.ws is ws:
                 self.ws = None
+                self.disconnected_at = time.time()
                 log.warning("Агент отключился")
 
     async def send_open(self, pulse: float, timeout: float) -> tuple[bool, str]:
@@ -107,6 +109,7 @@ class AccessController:
         self._last_open_plate: dict[str, float] = {}
         self._last_denied_notify: dict[str, float] = {}
         self._lock = asyncio.Lock()
+        self._bg: set[asyncio.Task] = set()
         self.snap_dir = cfg.data_dir / "snapshots"
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop):
@@ -172,7 +175,7 @@ class AccessController:
             detail=detail, snapshot=snap, crop=crop,
         )
         if self.notifier and not repeat:
-            await self.notifier.event(self.db.get_event(event_id), self._abs(snap))
+            self._notify(event_id, snap)
 
     async def _on_finished(self, session):
         if session.decided or not session.counts:
@@ -194,7 +197,13 @@ class AccessController:
         if (self.notifier and decision == "denied"
                 and now - self._last_denied_notify.get(text, 0) > 120):
             self._last_denied_notify[text] = now
-            await self.notifier.event(self.db.get_event(event_id), self._abs(snap))
+            self._notify(event_id, snap)
+
+    def _notify(self, event_id: int, snap: str | None):
+        """Уведомление отправляется в фоне: медленный интернет не должен задерживать ворота."""
+        task = asyncio.create_task(self.notifier.event(self.db.get_event(event_id), self._abs(snap)))
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
 
     # --- снимки --------------------------------------------------------------------
     def _abs(self, rel: str | None) -> Path | None:

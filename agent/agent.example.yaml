@@ -1,25 +1,27 @@
-# Адрес сервера (wss:// — через HTTPS/Caddy, ws:// — напрямую или через WireGuard)
-server_url: wss://lpr.example.ru
-token: REPLACE_WITH_AGENT_TOKEN   # то же значение, что AGENT_TOKEN в .env сервера
+# Сервер работает на этом же ПК в Docker
+server_url: ws://127.0.0.1:8000
+token: REPLACE_WITH_AGENT_TOKEN   # значение AGENT_TOKEN из файла .env
 name: gate-pc
 
 # Способ управления: serial | hid | http | gpio | command | dummy
 driver: serial
 max_pulse: 3        # защита: не держать реле дольше N секунд
 
-# USB-реле на CH340 (LCUS-1). В Linux порт /dev/ttyUSB0, в Windows — COM3 и т.п.
+# USB-реле на CH340 (LCUS-1). Номер COM-порта смотрите в Диспетчере устройств
+# → «Порты (COM и LPT)» → USB-SERIAL CH340 (COMx). В Linux: /dev/ttyUSB0
 serial:
-  port: /dev/ttyUSB0
+  port: COM3
   baudrate: 9600
   channel: 1
 
-# USB HID-реле (определяется как HID-устройство, без COM-порта)
+# USB HID-реле (USBRelay1/2, «dcttech»): определяется как HID-устройство, без COM-порта.
+# Нужен пакет hidapi (раскомментируйте в requirements.txt)
 hid:
   vendor_id: "0x16c0"
   product_id: "0x05df"
   channel: 1
 
-# Сетевое реле. Shelly Plus 1 / Shelly 1 Gen3 (сам выключится через 1 с):
+# Сетевое реле. Shelly Plus 1 / Shelly 1 Gen3 (само выключится через 1 с):
 http:
   pulse_url: http://192.168.1.50/rpc/Switch.Set?id=0&on=true&toggle_after=1
   # Shelly 1 первого поколения:
@@ -28,12 +30,12 @@ http:
   # pulse_url: http://192.168.1.60/button/gate_open/press
   # method: POST
 
-# Raspberry Pi + модуль реле
+# Raspberry Pi + модуль реле (только Linux)
 gpio:
   pin: 17
   active_high: true
 
-# Любая команда (например, утилита usbrelay)
+# Любая команда
 command:
   on_cmd: usbrelay BITFT_1=1
   off_cmd: usbrelay BITFT_1=0

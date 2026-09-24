@@ -6,8 +6,8 @@ cameras:
   #   rtsps://192.168.1.1:7441/AbCdEf123?enableSrtp
   # Для ffmpeg замените его на незашифрованный вариант:
   #   rtsp://192.168.1.1:7447/AbCdEf123
-  # Адрес 192.168.1.1 — это консоль UniFi (UDM/Cloud Key/NVR) в сети объекта,
-  # сервер видит её через туннель WireGuard (см. docs/network.md).
+  # 192.168.1.1 здесь — адрес консоли UniFi (UDM / Cloud Key / NVR) в локальной сети.
+  # Проверить адрес можно в VLC: «Медиа → Открыть URL».
   - id: outside
     name: Въезд (снаружи)
     url: rtsp://192.168.1.1:7447/REPLACE_OUTSIDE_TOKEN
@@ -45,9 +45,19 @@ gate:
   ack_timeout: 5
 
 telegram:
-  # token и chat_ids можно задать здесь или в .env (TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS)
+  # token и chat_ids задаются в .env (TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS)
   notify_granted: true
   notify_denied: true
   interactive: true         # кнопки «Открыть» и «В список» под уведомлениями
+  max_command_age: 120      # «открыть», пришедшее позже (после обрыва связи), не выполняется
+  max_callback_age: 900     # кнопка «Открыть» под уведомлением действует 15 минут
+  outage_min: 60            # обрывы интернета короче минуты не считаются
+  agent_alert_after: 30     # предупредить, если агент ворот не на связи дольше 30 с
+  camera_alert_after: 120   # ... или нет видео с камеры дольше 2 минут
+
+healthcheck:
+  # Адрес задаётся в .env (HEALTHCHECK_URL). Сервер отправляет запрос раз в interval
+  # секунд. Если что-то сломалось, адрес дополняется /fail
+  interval: 60
 
 retention_days: 30          # сколько хранить журнал и снимки

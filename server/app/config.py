@@ -66,6 +66,25 @@ class TelegramConfig:
     notify_denied: bool = True
     # Кнопки «Открыть» / «Добавить в список» под уведомлением о неизвестном номере
     interactive: bool = True
+    # Команда «открыть», пришедшая с опозданием (копилась, пока не было интернета),
+    # не выполняется, если она старше N секунд
+    max_command_age: float = 120
+    # Кнопку «Открыть» под уведомлением можно нажать не позже, чем через N секунд
+    max_callback_age: float = 900
+    # Обрыв связи короче N секунд не считается (в отчёт о восстановлении не попадает)
+    outage_min: float = 60
+    # Предупреждать, если агент ворот / камера не на связи дольше N секунд
+    agent_alert_after: float = 30
+    camera_alert_after: float = 120
+
+
+@dataclass
+class HealthcheckConfig:
+    # Внешний «сторож» (например healthchecks.io): сервер раз в interval секунд
+    # отправляет сюда запрос. Если запросы прекратились (пропал интернет или
+    # выключился ПК), сторож сам пришлёт уведомление в Telegram.
+    url: str = ""
+    interval: float = 60
 
 
 @dataclass
@@ -75,6 +94,7 @@ class Config:
     gate: GateConfig
     telegram: TelegramConfig
     data_dir: Path
+    healthcheck: HealthcheckConfig = field(default_factory=HealthcheckConfig)
     retention_days: int = 30
     admin_user: str = "admin"
     admin_password: str = ""
@@ -91,7 +111,7 @@ def _section(cls, data: dict | None):
 
 def load_config(path: str | os.PathLike | None = None) -> Config:
     path = Path(path or os.environ.get("LPR_CONFIG", "config.yaml"))
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
     raw = raw or {}
 
     cameras = [_section(CameraConfig, c) for c in raw.get("cameras", [])]
@@ -100,7 +120,11 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
     if os.environ.get("TELEGRAM_CHAT_IDS"):
         telegram.chat_ids = [int(x) for x in os.environ["TELEGRAM_CHAT_IDS"].split(",") if x.strip()]
 
+    healthcheck = _section(HealthcheckConfig, raw.get("healthcheck"))
+    healthcheck.url = os.environ.get("HEALTHCHECK_URL", healthcheck.url)
+
     cfg = Config(
+        healthcheck=healthcheck,
         cameras=cameras,
         recognition=_section(RecognitionConfig, raw.get("recognition")),
         gate=_section(GateConfig, raw.get("gate")),

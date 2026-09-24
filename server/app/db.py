@@ -67,6 +67,10 @@ class Database:
         rows = self._q("SELECT * FROM plates WHERE id=?", (plate_id,))
         return dict(rows[0]) if rows else None
 
+    def find_plate(self, plate: str) -> dict | None:
+        rows = self._q("SELECT * FROM plates WHERE plate=?", (plate,))
+        return dict(rows[0]) if rows else None
+
     def add_plate(self, plate: str, owner: str = "", note: str = "", valid_until: str | None = None) -> int:
         self._allowed_cache = None
         return self._exec(
@@ -135,6 +139,11 @@ class Database:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY ts DESC LIMIT ? OFFSET ?"
         return [dict(r) for r in self._q(sql, (*args, limit, offset))]
+
+    def count_events(self, since: float, until: float) -> dict[str, int]:
+        rows = self._q("SELECT decision, COUNT(*) AS n FROM events WHERE ts BETWEEN ? AND ? GROUP BY decision",
+                       (since, until))
+        return {r["decision"]: r["n"] for r in rows}
 
     def old_events(self, before_ts: float) -> list[dict]:
         return [dict(r) for r in self._q("SELECT id, snapshot, crop FROM events WHERE ts < ?", (before_ts,))]

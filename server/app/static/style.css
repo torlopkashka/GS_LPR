@@ -59,3 +59,4 @@ body.login { display: grid; place-items: center; min-height: 100vh; padding: 16p
   .row.tight { flex-wrap: wrap; }
   .cams { grid-template-columns: 1fr; }
 }
+.b-system { background: var(--warn-bg); color: var(--warn); }

@@ -2,7 +2,10 @@
 {% block title %}Панель{% endblock %}
 {% block content %}
 <section class="bar">
-  <div id="agent" class="status">Агент ворот: <span>…</span></div>
+  <div class="status">
+    <div id="agent">Агент ворот: <span>…</span></div>
+    <div id="net" class="small muted"></div>
+  </div>
   <button id="open-btn" class="primary big">🔓 Открыть ворота</button>
 </section>
 

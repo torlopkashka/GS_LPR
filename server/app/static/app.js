@@ -12,6 +12,13 @@
         ? 'на связи' + (s.agent.info.driver ? ' (' + s.agent.info.driver + ')' : '')
         : 'НЕ на связи';
       agentEl.className = s.agent.online ? 'ok' : 'bad';
+      const net = document.getElementById('net');
+      if (s.telegram.enabled) {
+        net.textContent = s.telegram.internet ? 'Интернет и Telegram: есть связь' : 'Интернет: НЕТ связи с Telegram';
+        net.className = 'small ' + (s.telegram.internet ? 'muted' : 'bad');
+      } else {
+        net.textContent = 'Telegram-бот не настроен';
+      }
       for (const c of s.cameras) {
         const el = document.querySelector(`[data-cam="${c.id}"] .cam-status`);
         if (!el) continue;

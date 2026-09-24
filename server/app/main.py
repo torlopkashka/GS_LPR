@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import load_config
 from .db import Database
 from .gate import AccessController, AgentHub
-from .notify import TelegramNotifier
+from .bot import TelegramBot
 from .plates import display, normalize
 from .recognizer import CameraWorker
 
@@ -36,10 +36,10 @@ cfg = load_config()
 db = Database(cfg.data_dir / "lpr.db")
 hub = AgentHub()
 cams_by_id = {c.id: c for c in cfg.cameras}
-notifier = TelegramNotifier(cfg.telegram, cams_by_id)
-controller = AccessController(cfg, db, hub, notifier if notifier.enabled else None)
-notifier.controller, notifier.db = controller, db
 workers: dict[str, CameraWorker] = {}
+bot = TelegramBot(cfg, db, hub, workers, cams_by_id)
+controller = AccessController(cfg, db, hub, bot if bot.enabled else None)
+bot.controller = controller
 
 DECISIONS = {
     "granted": "Открыто",
@@ -47,6 +47,7 @@ DECISIONS = {
     "manual": "Открыто вручную",
     "logged": "Распознан",
     "error": "Ошибка открытия",
+    "system": "Система",
 }
 
 
@@ -58,7 +59,7 @@ async def lifespan(app: FastAPI):
             w = CameraWorker(cam, cfg.recognition, controller.on_camera_event)
             workers[cam.id] = w
             w.start()
-    tasks = [asyncio.create_task(controller.cleanup_loop()), asyncio.create_task(notifier.poll_loop())]
+    tasks = [asyncio.create_task(t) for t in (controller.cleanup_loop(), bot.poll_loop(), bot.monitor_loop())]
     log.info("Запущено камер: %d", len(workers))
     yield
     for t in tasks:
@@ -253,6 +254,12 @@ async def api_status(user: str = Depends(api_user)):
     return {
         "agent": hub.status(),
         "cameras": [w.status() for w in workers.values()],
+        "telegram": {
+            "enabled": bot.enabled,
+            "internet": bot.offline_since is None if bot.enabled else None,
+            "last_outage": bot.last_outage,
+        },
+        "uptime": round(time.time() - bot.started_at),
         "time": time.time(),
     }
 
