@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import load_config
 from .db import Database
 from .gate import AccessController, AgentHub
-from .cloudlink import CloudLink
+from .b24bot import Bitrix24Bot
 from .plates import display, normalize
 from .recognizer import CameraWorker
 
@@ -37,9 +37,9 @@ db = Database(cfg.data_dir / "lpr.db")
 hub = AgentHub()
 cams_by_id = {c.id: c for c in cfg.cameras}
 workers: dict[str, CameraWorker] = {}
-link = CloudLink(cfg, db, hub, workers, cams_by_id)
-controller = AccessController(cfg, db, hub, link if link.enabled else None)
-link.controller = controller
+bot = Bitrix24Bot(cfg, db, hub, workers, cams_by_id)
+controller = AccessController(cfg, db, hub, bot if bot.enabled else None)
+bot.controller = controller
 
 DECISIONS = {
     "granted": "Открыто",
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
             w = CameraWorker(cam, cfg.recognition, controller.on_camera_event)
             workers[cam.id] = w
             w.start()
-    tasks = [asyncio.create_task(t) for t in (controller.cleanup_loop(), link.run(), link.monitor_loop())]
+    tasks = [asyncio.create_task(t) for t in (controller.cleanup_loop(), bot.poll_loop(), bot.monitor_loop())]
     log.info("Запущено камер: %d", len(workers))
     yield
     for t in tasks:
@@ -254,13 +254,13 @@ async def api_status(user: str = Depends(api_user)):
     return {
         "agent": hub.status(),
         "cameras": [w.status() for w in workers.values()],
-        "vps": {
-            "enabled": link.enabled,
-            "online": link.online,
-            "offline_since": link.offline_since,
-            "last_outage": link.last_outage,
+        "bitrix24": {
+            "enabled": bot.enabled,
+            "ready": bot.ready,
+            "internet": bot.offline_since is None if bot.enabled else None,
+            "last_outage": bot.last_outage,
         },
-        "uptime": round(time.time() - link.started_at),
+        "uptime": round(time.time() - bot.started_at),
         "time": time.time(),
     }
 

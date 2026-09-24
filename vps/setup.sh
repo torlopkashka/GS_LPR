@@ -1,5 +1,5 @@
 #!/bin/sh
-# Первичная настройка VPS (Ubuntu/Debian). Запуск из папки vps:  sudo sh setup.sh
+# Установка Uptime Kuma на VPS (Ubuntu/Debian). Запуск из папки vps:  sudo sh setup.sh
 set -e
 cd "$(dirname "$0")"
 
@@ -8,21 +8,16 @@ if ! command -v docker >/dev/null 2>&1; then
     curl -fsSL https://get.docker.com | sh
 fi
 
-if [ ! -f .env ]; then
-    cp .env.example .env
-    sed -i "s/^B24_BOT_TOKEN=.*/B24_BOT_TOKEN=$(openssl rand -hex 16)/" .env
-    sed -i "s/^LINK_TOKEN=.*/LINK_TOKEN=$(openssl rand -hex 32)/" .env
-    chmod 600 .env
-    echo
-    echo "Создан файл .env. Заполните в нём SITE_ADDRESS, B24_WEBHOOK_URL и B24_USER_IDS:"
-    echo "    nano .env"
-    echo "затем снова запустите: sudo sh setup.sh"
-    exit 0
+# Порт 3001: веб-интерфейс Kuma и приём сигналов с объекта
+if command -v ufw >/dev/null 2>&1; then
+    ufw allow 22/tcp >/dev/null
+    ufw allow 3001/tcp >/dev/null
 fi
 
-mkdir -p data/kuma data/bot data/caddy
-docker compose up -d --build
+mkdir -p data
+docker compose up -d
+
+IP=$(curl -fs4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
 echo
-echo "Готово. Проверка:  docker compose ps   и   docker compose logs -f bot"
-echo "LINK_TOKEN для файла local/.env на компьютере у ворот:"
-grep '^LINK_TOKEN=' .env | cut -d= -f2
+echo "Готово. Откройте в браузере:  http://$IP:3001"
+echo "Дальше — раздел «Настройка Uptime Kuma» в docs/vps.md"
