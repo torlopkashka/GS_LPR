@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import load_config
 from .db import Database
 from .gate import AccessController, AgentHub
-from .bot import TelegramBot
+from .b24bot import Bitrix24Bot
 from .plates import display, normalize
 from .recognizer import CameraWorker
 
@@ -37,7 +37,7 @@ db = Database(cfg.data_dir / "lpr.db")
 hub = AgentHub()
 cams_by_id = {c.id: c for c in cfg.cameras}
 workers: dict[str, CameraWorker] = {}
-bot = TelegramBot(cfg, db, hub, workers, cams_by_id)
+bot = Bitrix24Bot(cfg, db, hub, workers, cams_by_id)
 controller = AccessController(cfg, db, hub, bot if bot.enabled else None)
 bot.controller = controller
 
@@ -254,8 +254,9 @@ async def api_status(user: str = Depends(api_user)):
     return {
         "agent": hub.status(),
         "cameras": [w.status() for w in workers.values()],
-        "telegram": {
+        "bitrix24": {
             "enabled": bot.enabled,
+            "ready": bot.ready,
             "internet": bot.offline_since is None if bot.enabled else None,
             "last_outage": bot.last_outage,
         },

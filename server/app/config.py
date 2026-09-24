@@ -59,20 +59,25 @@ class GateConfig:
 
 
 @dataclass
-class TelegramConfig:
-    token: str = ""
-    chat_ids: list[int] = field(default_factory=list)
-    # Если api.telegram.org недоступен напрямую:
-    # api_url — свой адрес Bot API (обратный прокси на зарубежном сервере),
-    # proxy — прокси для запросов к Telegram: http://, https:// или socks5://
-    api_url: str = "https://api.telegram.org"
-    proxy: str = ""
+class Bitrix24Config:
+    # Входящий вебхук Битрикс24 с правами imbot: https://портал.bitrix24.ru/rest/1/xxxxxxxx/
+    webhook_url: str = ""
+    # Секрет бота (до 40 символов). Задаётся один раз, при смене бот регистрируется заново
+    bot_token: str = ""
+    bot_code: str = "gs_lpr_gate"
+    bot_name: str = "Ворота"
+    # ID сотрудников Битрикс24, которым разрешено управлять воротами
+    user_ids: list[int] = field(default_factory=list)
+    # Куда слать уведомления: "chat123" — групповой чат, "15" — личный диалог.
+    # Пусто — бот сам создаст групповой чат «Ворота» с сотрудниками из user_ids
+    dialog_id: str = ""
+    poll_interval: float = 3.0
     notify_granted: bool = True
     notify_denied: bool = True
     # Кнопки «Открыть» / «Добавить в список» под уведомлением о неизвестном номере
     interactive: bool = True
-    # Команда «открыть», пришедшая с опозданием (копилась, пока не было интернета),
-    # не выполняется, если она старше N секунд
+    # Команда «открыть», нажатая больше N секунд назад (например, пока не было
+    # интернета), не выполняется
     max_command_age: float = 120
     # Кнопку «Открыть» под уведомлением можно нажать не позже, чем через N секунд
     max_callback_age: float = 900
@@ -87,7 +92,7 @@ class TelegramConfig:
 class HealthcheckConfig:
     # Внешний «сторож» (Uptime Kuma или healthchecks.io): сервер раз в interval секунд
     # отправляет сюда запрос. Если запросы прекратились (пропал интернет или
-    # выключился ПК), сторож сам пришлёт уведомление в Telegram.
+    # выключился ПК), сторож сам пришлёт уведомление (Битрикс24, SMS, почта).
     url: str = ""
     interval: float = 60
 
@@ -97,7 +102,7 @@ class Config:
     cameras: list[CameraConfig]
     recognition: RecognitionConfig
     gate: GateConfig
-    telegram: TelegramConfig
+    bitrix24: Bitrix24Config
     data_dir: Path
     healthcheck: HealthcheckConfig = field(default_factory=HealthcheckConfig)
     retention_days: int = 30
@@ -120,12 +125,14 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
     raw = raw or {}
 
     cameras = [_section(CameraConfig, c) for c in raw.get("cameras", [])]
-    telegram = _section(TelegramConfig, raw.get("telegram"))
-    telegram.token = os.environ.get("TELEGRAM_TOKEN", telegram.token)
-    telegram.api_url = os.environ.get("TELEGRAM_API_URL") or telegram.api_url
-    telegram.proxy = os.environ.get("TELEGRAM_PROXY") or telegram.proxy
-    if os.environ.get("TELEGRAM_CHAT_IDS"):
-        telegram.chat_ids = [int(x) for x in os.environ["TELEGRAM_CHAT_IDS"].split(",") if x.strip()]
+    b24 = _section(Bitrix24Config, raw.get("bitrix24"))
+    b24.webhook_url = os.environ.get("B24_WEBHOOK_URL") or b24.webhook_url
+    b24.bot_token = os.environ.get("B24_BOT_TOKEN") or b24.bot_token
+    b24.dialog_id = os.environ.get("B24_DIALOG_ID") or b24.dialog_id
+    if os.environ.get("B24_USER_IDS"):
+        b24.user_ids = [int(x) for x in os.environ["B24_USER_IDS"].split(",") if x.strip()]
+    if len(b24.bot_token) > 40:
+        raise RuntimeError("B24_BOT_TOKEN должен быть не длиннее 40 символов")
 
     healthcheck = _section(HealthcheckConfig, raw.get("healthcheck"))
     healthcheck.url = os.environ.get("HEALTHCHECK_URL", healthcheck.url)
@@ -135,7 +142,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         cameras=cameras,
         recognition=_section(RecognitionConfig, raw.get("recognition")),
         gate=_section(GateConfig, raw.get("gate")),
-        telegram=telegram,
+        bitrix24=b24,
         data_dir=Path(os.environ.get("LPR_DATA_DIR", raw.get("data_dir", "data"))),
         retention_days=int(raw.get("retention_days", 30)),
         admin_user=os.environ.get("ADMIN_USER", "admin"),

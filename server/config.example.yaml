@@ -44,12 +44,14 @@ gate:
   plate_cooldown: 60        # одному номеру — не чаще раза в N секунд (с обеих камер)
   ack_timeout: 5
 
-telegram:
-  # token и chat_ids задаются в .env (TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS)
+bitrix24:
+  # Вебхук, токен бота и ID сотрудников задаются в .env (B24_WEBHOOK_URL, B24_BOT_TOKEN, B24_USER_IDS)
+  bot_name: Ворота
   notify_granted: true
   notify_denied: true
   interactive: true         # кнопки «Открыть» и «В список» под уведомлениями
-  max_command_age: 120      # «открыть», пришедшее позже (после обрыва связи), не выполняется
+  poll_interval: 3          # как часто забирать команды из Битрикс24, секунд
+  max_command_age: 120      # «открыть», нажатое раньше (во время обрыва связи), не выполняется
   max_callback_age: 900     # кнопка «Открыть» под уведомлением действует 15 минут
   outage_min: 60            # обрывы интернета короче минуты не считаются
   agent_alert_after: 30     # предупредить, если агент ворот не на связи дольше 30 с

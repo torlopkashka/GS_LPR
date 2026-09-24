@@ -13,11 +13,13 @@
         : 'НЕ на связи';
       agentEl.className = s.agent.online ? 'ok' : 'bad';
       const net = document.getElementById('net');
-      if (s.telegram.enabled) {
-        net.textContent = s.telegram.internet ? 'Интернет и Telegram: есть связь' : 'Интернет: НЕТ связи с Telegram';
-        net.className = 'small ' + (s.telegram.internet ? 'muted' : 'bad');
+      const bx = s.bitrix24;
+      if (bx.enabled) {
+        net.textContent = !bx.internet ? 'Интернет: НЕТ связи с Битрикс24'
+          : bx.ready ? 'Битрикс24: бот на связи' : 'Битрикс24: бот настраивается…';
+        net.className = 'small ' + (bx.internet && bx.ready ? 'muted' : 'bad');
       } else {
-        net.textContent = 'Telegram-бот не настроен';
+        net.textContent = 'Бот Битрикс24 не настроен';
       }
       for (const c of s.cameras) {
         const el = document.querySelector(`[data-cam="${c.id}"] .cam-status`);

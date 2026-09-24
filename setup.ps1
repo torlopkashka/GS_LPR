@@ -21,8 +21,9 @@ if (-not (Test-Path ".env")) {
     $text = $text -replace 'ADMIN_PASSWORD=.*', ('ADMIN_PASSWORD=' + $password.Replace('$', '$$'))
     $text = $text -replace 'SECRET_KEY=.*', "SECRET_KEY=$(New-Secret)"
     $text = $text -replace 'AGENT_TOKEN=.*', "AGENT_TOKEN=$(New-Secret)"
+    $text = $text -replace 'B24_BOT_TOKEN=.*', "B24_BOT_TOKEN=$((New-Secret).Substring(0, 32))"
     [IO.File]::WriteAllText("$PSScriptRoot\.env", $text, (New-Object Text.UTF8Encoding $false))
-    Write-Host "Создан .env. Токен бота Telegram и chat id впишите в него позже." -ForegroundColor Green
+    Write-Host "Создан .env. Вебхук Битрикс24 и ID сотрудников впишите в него позже (docs\bitrix24.md)." -ForegroundColor Green
 }
 
 if (-not (Test-Path "server\config.yaml")) {
