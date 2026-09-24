@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Номера{% endblock %}
+{% block content %}
+{% if msg %}<p class="note">{{ msg }}</p>{% endif %}
+<section class="card">
+  <h2>Добавить номер</h2>
+  <form method="post" action="/plates" class="row">
+    <input name="plate" placeholder="А123ВС77" value="{{ add|plate }}" required {% if add %}autofocus{% endif %}>
+    <input name="owner" placeholder="Владелец">
+    <input name="note" placeholder="Комментарий">
+    <label class="inline">до <input type="date" name="valid_until" title="Срок действия (пусто — бессрочно)"></label>
+    <button class="primary">Добавить</button>
+  </form>
+  <p class="muted small">Номер можно вводить кириллицей или латиницей, с пробелами или без. Для гостевого доступа укажите срок действия.</p>
+</section>
+
+<section class="card">
+  <h2>Разрешённые номера ({{ plates|length }})</h2>
+  <div class="row">
+    <form method="get" class="row grow"><input name="q" value="{{ q }}" placeholder="Поиск по номеру или владельцу"><button>Найти</button></form>
+    <a class="btn" href="/plates/export.csv">Экспорт CSV</a>
+    <form method="post" action="/plates/import" enctype="multipart/form-data" class="row">
+      <input type="file" name="file" accept=".csv,text/csv" required><button>Импорт</button>
+    </form>
+  </div>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Номер</th><th>Владелец</th><th>Комментарий</th><th>Действует до</th><th></th></tr></thead>
+    <tbody>
+    {% for p in plates %}
+      {% set expired = p.valid_until and p.valid_until < today %}
+      <tr class="{% if not p.active or expired %}off{% endif %}">
+        <td colspan="4">
+          <form method="post" action="/plates/{{ p.id }}/edit" class="row tight">
+            <input name="plate" value="{{ p.plate|plate }}" class="plate w-plate">
+            <input name="owner" value="{{ p.owner }}">
+            <input name="note" value="{{ p.note }}">
+            <input type="date" name="valid_until" value="{{ p.valid_until or '' }}">
+            <button title="Сохранить">💾</button>
+            {% if expired %}<small class="err">истёк</small>{% endif %}
+          </form>
+        </td>
+        <td class="nowrap">
+          <form method="post" action="/plates/{{ p.id }}/toggle" class="inline"><button>{{ 'Отключить' if p.active else 'Включить' }}</button></form>
+          <form method="post" action="/plates/{{ p.id }}/delete" class="inline" onsubmit="return confirm('Удалить {{ p.plate|plate }}?')"><button class="danger">✕</button></form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Список пуст</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

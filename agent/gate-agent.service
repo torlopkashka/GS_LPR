@@ -1,0 +1,16 @@
+[Unit]
+Description=GS LPR gate agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gateagent
+Group=dialout
+WorkingDirectory=/opt/gate-agent
+ExecStart=/opt/gate-agent/venv/bin/python /opt/gate-agent/gate_agent.py -c /opt/gate-agent/agent.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

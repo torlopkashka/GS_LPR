@@ -1,0 +1,21 @@
+{% for e in events %}
+<tr class="d-{{ e.decision }}">
+  <td class="nowrap">{{ e.ts|dt }}</td>
+  <td>{{ cams[e.camera].name if e.camera in cams else e.camera }}</td>
+  <td>
+    {% if e.crop %}<img class="crop" src="/media/{{ e.crop }}" alt="" loading="lazy">{% endif %}
+    <b class="plate">{{ e.plate|plate or '—' }}</b>
+    {% if e.matched and e.matched != e.plate %}<small class="muted">≈ {{ e.matched|plate }}</small>{% endif %}
+  </td>
+  <td>{{ e.owner }}</td>
+  <td><span class="badge b-{{ e.decision }}">{{ DECISIONS.get(e.decision, e.decision) }}</span>
+    {% if e.detail %}<br><small class="muted">{{ e.detail }}</small>{% endif %}</td>
+  <td class="nowrap">
+    {% if e.snapshot %}<a href="/media/{{ e.snapshot }}" target="_blank">кадр</a>{% endif %}
+    {% if e.plate and e.decision in ('denied', 'logged') and (allowed is not defined or e.plate not in allowed) %}
+      · <a href="/plates?add={{ e.plate }}">в список</a>{% endif %}
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="6" class="muted">Событий пока нет</td></tr>
+{% endfor %}

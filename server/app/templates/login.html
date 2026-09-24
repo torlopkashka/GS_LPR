@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход · GS LPR</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login">
+<form method="post" action="/login" class="card narrow">
+  <h1>🚗 GS LPR</h1>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  <label>Логин<input name="username" autocomplete="username" required autofocus></label>
+  <label>Пароль<input name="password" type="password" autocomplete="current-password" required></label>
+  <button class="primary">Войти</button>
+</form>
+</body>
+</html>

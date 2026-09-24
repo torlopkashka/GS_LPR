@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Панель{% endblock %}
+{% block content %}
+<section class="bar">
+  <div id="agent" class="status">Агент ворот: <span>…</span></div>
+  <button id="open-btn" class="primary big">🔓 Открыть ворота</button>
+</section>
+
+<section class="cams">
+  {% for c in cameras %}
+  <figure class="card cam" data-cam="{{ c.id }}">
+    <figcaption><b>{{ c.name }}</b> <small class="muted">{{ 'въезд' if c.role == 'entry' else 'выезд' }}</small>
+      <span class="cam-status muted"></span></figcaption>
+    {% if c.enabled %}
+    <img class="preview" data-src="/api/cameras/{{ c.id }}/preview.jpg" alt="нет изображения">
+    {% else %}<p class="muted">камера отключена в конфигурации</p>{% endif %}
+  </figure>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h2>Последние события <a class="small" href="/events">весь журнал →</a></h2>
+  <div class="scroll">
+  <table class="events">
+    <thead><tr><th>Время</th><th>Камера</th><th>Номер</th><th>Владелец</th><th>Решение</th><th></th></tr></thead>
+    <tbody id="events-body">{% include "_event_rows.html" %}</tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,6 @@
+# HTTPS-сертификат Let's Encrypt выпускается автоматически.
+# Домен задаётся в .env (LPR_DOMAIN), его A-запись должна указывать на VPS.
+{$LPR_DOMAIN} {
+	encode gzip
+	reverse_proxy lpr:8000
+}

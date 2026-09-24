@@ -1,0 +1,8 @@
+.env
+data/
+server/config.yaml
+agent/agent.yaml
+__pycache__/
+*.pyc
+.venv/
+venv/

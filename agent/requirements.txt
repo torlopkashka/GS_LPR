@@ -1,0 +1,6 @@
+websockets>=14
+pyyaml>=6.0
+# Нужное для выбранного драйвера:
+pyserial>=3.5     # driver: serial (USB-реле LCUS / CH340)
+# hidapi>=0.14    # driver: hid (USB HID-реле dcttech)
+# gpiozero>=2.0   # driver: gpio (Raspberry Pi)

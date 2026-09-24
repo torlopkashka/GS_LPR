@@ -1,0 +1,38 @@
+services:
+  lpr:
+    build: ./server
+    container_name: lpr
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./server/config.yaml:/config/config.yaml:ro
+      - ./data:/data
+    # Без домена/HTTPS раскомментируйте и заходите по http://IP:8000
+    # (лучше тогда пускать только через WireGuard: "10.8.0.1:8000:8000")
+    # ports:
+    #   - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.8"
+          memory: 2g
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - LPR_DOMAIN=${LPR_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [lpr]
+
+volumes:
+  caddy_data:

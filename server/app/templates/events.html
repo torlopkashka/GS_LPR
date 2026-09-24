@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Журнал{% endblock %}
+{% block content %}
+<section class="card">
+  <form method="get" class="row">
+    <input name="q" value="{{ q }}" placeholder="Номер">
+    <select name="decision">
+      <option value="">Все решения</option>
+      {% for k, v in DECISIONS.items() %}<option value="{{ k }}" {% if k == decision %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+    <button>Показать</button>
+  </form>
+  <div class="scroll">
+  <table class="events">
+    <thead><tr><th>Время</th><th>Камера</th><th>Номер</th><th>Владелец</th><th>Решение</th><th></th></tr></thead>
+    <tbody>{% include "_event_rows.html" %}</tbody>
+  </table>
+  </div>
+  <p class="row">
+    {% if page > 1 %}<a class="btn" href="?q={{ q }}&decision={{ decision }}&page={{ page - 1 }}">← Новее</a>{% endif %}
+    {% if has_next %}<a class="btn" href="?q={{ q }}&decision={{ decision }}&page={{ page + 1 }}">Старее →</a>{% endif %}
+  </p>
+</section>
+{% endblock %}
