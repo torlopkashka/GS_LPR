@@ -1,8 +1,12 @@
+# секреты и данные
 .env
 data/
-server/config.yaml
-agent/agent.yaml
+local/server/config.yaml
+local/agent/agent.yaml
+local/agent/agent.log*
+local/agent/venv/
 __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/

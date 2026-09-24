@@ -21,9 +21,12 @@ if (-not (Test-Path ".env")) {
     $text = $text -replace 'ADMIN_PASSWORD=.*', ('ADMIN_PASSWORD=' + $password.Replace('$', '$$'))
     $text = $text -replace 'SECRET_KEY=.*', "SECRET_KEY=$(New-Secret)"
     $text = $text -replace 'AGENT_TOKEN=.*', "AGENT_TOKEN=$(New-Secret)"
-    $text = $text -replace 'B24_BOT_TOKEN=.*', "B24_BOT_TOKEN=$((New-Secret).Substring(0, 32))"
+    $vps = Read-Host "Адрес VPS (домен, например vps.example.ru; Enter — указать позже)"
+    if ($vps) { $text = $text -replace 'VPS_LINK_URL=.*', "VPS_LINK_URL=wss://$vps/link" }
+    $link = Read-Host "LINK_TOKEN из vps/.env (Enter — указать позже)"
+    if ($link) { $text = $text -replace 'LINK_TOKEN=.*', ('LINK_TOKEN=' + $link.Trim()) }
     [IO.File]::WriteAllText("$PSScriptRoot\.env", $text, (New-Object Text.UTF8Encoding $false))
-    Write-Host "Создан .env. Вебхук Битрикс24 и ID сотрудников впишите в него позже (docs\bitrix24.md)." -ForegroundColor Green
+    Write-Host "Создан .env. Его можно дополнить позже: notepad .env" -ForegroundColor Green
 }
 
 if (-not (Test-Path "server\config.yaml")) {

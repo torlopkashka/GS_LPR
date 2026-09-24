@@ -1,0 +1,35 @@
+# VPS: Uptime Kuma + бот Битрикс24 + Caddy (HTTPS).
+# Запуск: docker compose up -d --build
+services:
+  kuma:
+    image: louislam/uptime-kuma:2
+    container_name: kuma
+    restart: unless-stopped
+    volumes:
+      - ./data/kuma:/app/data
+
+  bot:
+    build: ./bot
+    container_name: gate-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data/bot:/data
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # домен (HTTPS-сертификат выпускается сам) или ":80" — без домена, только HTTP
+      - SITE_ADDRESS=${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+    depends_on: [kuma, bot]
