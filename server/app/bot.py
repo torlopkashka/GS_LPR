@@ -103,8 +103,10 @@ class TelegramBot:
         self.cameras = cameras
         self.controller = None  # AccessController, задаётся в main
         self.started_at = time.time()
-        self.api = f"https://api.telegram.org/bot{self.tg.token}"
-        self.client = httpx.AsyncClient(timeout=httpx.Timeout(20, read=45))
+        self.api = f"{self.tg.api_url.rstrip('/')}/bot{self.tg.token}"
+        # Запросы к Telegram — при необходимости через прокси; к сторожу — всегда напрямую
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(20, read=45), proxy=self.tg.proxy or None)
+        self.http = httpx.AsyncClient(timeout=10)
         # состояние связи с интернетом (по доступности Telegram)
         self.last_ok = 0.0
         self.offline_since: float | None = None
@@ -472,10 +474,9 @@ class TelegramBot:
         try:
             if "/api/push/" in base:
                 url = base.split("?")[0]
-                await self.client.get(url, params={"status": "down" if problems else "up", "msg": msg},
-                                      timeout=10)
+                await self.http.get(url, params={"status": "down" if problems else "up", "msg": msg})
             else:
                 url = base.rstrip("/") + ("/fail" if problems else "")
-                await self.client.post(url, content=msg, timeout=10)
+                await self.http.post(url, content=msg)
         except Exception as e:
             log.debug("Сторож недоступен: %s", e)

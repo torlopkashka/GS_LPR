@@ -62,6 +62,11 @@ class GateConfig:
 class TelegramConfig:
     token: str = ""
     chat_ids: list[int] = field(default_factory=list)
+    # Если api.telegram.org недоступен напрямую:
+    # api_url — свой адрес Bot API (обратный прокси на зарубежном сервере),
+    # proxy — прокси для запросов к Telegram: http://, https:// или socks5://
+    api_url: str = "https://api.telegram.org"
+    proxy: str = ""
     notify_granted: bool = True
     notify_denied: bool = True
     # Кнопки «Открыть» / «Добавить в список» под уведомлением о неизвестном номере
@@ -117,6 +122,8 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
     cameras = [_section(CameraConfig, c) for c in raw.get("cameras", [])]
     telegram = _section(TelegramConfig, raw.get("telegram"))
     telegram.token = os.environ.get("TELEGRAM_TOKEN", telegram.token)
+    telegram.api_url = os.environ.get("TELEGRAM_API_URL") or telegram.api_url
+    telegram.proxy = os.environ.get("TELEGRAM_PROXY") or telegram.proxy
     if os.environ.get("TELEGRAM_CHAT_IDS"):
         telegram.chat_ids = [int(x) for x in os.environ["TELEGRAM_CHAT_IDS"].split(",") if x.strip()]
 

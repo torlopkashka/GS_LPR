@@ -138,19 +138,27 @@ class FakeHttp:
 
 
 def test_healthcheck_formats(bot):
-    bot.client = FakeHttp()
+    bot.http = FakeHttp()
     bot.cfg.healthcheck.url = "https://mon.example.ru/api/push/AbC123?status=up&msg=OK&ping="
     run(bot._ping_healthcheck())  # агент не на связи -> down
-    method, url, params = bot.client.calls[-1]
+    method, url, params = bot.http.calls[-1]
     assert method == "GET" and url == "https://mon.example.ru/api/push/AbC123"
     assert params["status"] == "down" and "агент" in params["msg"]
     bot.hub.ws = object()
     run(bot._ping_healthcheck())
-    assert bot.client.calls[-1][2]["status"] == "up"
+    assert bot.http.calls[-1][2]["status"] == "up"
 
     bot.cfg.healthcheck.url = "https://hc-ping.com/uuid"
     run(bot._ping_healthcheck())
-    assert bot.client.calls[-1][:2] == ("POST", "https://hc-ping.com/uuid")
+    assert bot.http.calls[-1][:2] == ("POST", "https://hc-ping.com/uuid")
     bot.hub.ws = None
     run(bot._ping_healthcheck())
-    assert bot.client.calls[-1][1] == "https://hc-ping.com/uuid/fail"
+    assert bot.http.calls[-1][1] == "https://hc-ping.com/uuid/fail"
+
+
+def test_proxy_and_api_url(tmp_path):
+    cfg = Config(cameras=[], recognition=RecognitionConfig(), gate=GateConfig(),
+                 telegram=TelegramConfig(token="T", chat_ids=[1], api_url="https://tg.example.ru/",
+                                         proxy="socks5://127.0.0.1:1080"), data_dir=tmp_path)
+    b = TelegramBot(cfg, Database(tmp_path / "d.db"), AgentHub(), {}, {})
+    assert b.api == "https://tg.example.ru/botT"
