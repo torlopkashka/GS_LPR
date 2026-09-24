@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import load_config
 from .db import Database
 from .gate import AccessController, AgentHub
-from .b24bot import Bitrix24Bot
+from .vpssync import VpsSync
 from .plates import display, normalize
 from .recognizer import CameraWorker
 
@@ -37,9 +37,8 @@ db = Database(cfg.data_dir / "lpr.db")
 hub = AgentHub()
 cams_by_id = {c.id: c for c in cfg.cameras}
 workers: dict[str, CameraWorker] = {}
-bot = Bitrix24Bot(cfg, db, hub, workers, cams_by_id)
-controller = AccessController(cfg, db, hub, bot if bot.enabled else None)
-bot.controller = controller
+vps = VpsSync(cfg, db, hub, workers, cams_by_id)
+controller = AccessController(cfg, db, hub, vps if vps.enabled else None)
 
 DECISIONS = {
     "granted": "Открыто",
@@ -59,7 +58,7 @@ async def lifespan(app: FastAPI):
             w = CameraWorker(cam, cfg.recognition, controller.on_camera_event)
             workers[cam.id] = w
             w.start()
-    tasks = [asyncio.create_task(t) for t in (controller.cleanup_loop(), bot.poll_loop(), bot.monitor_loop())]
+    tasks = [asyncio.create_task(t) for t in (controller.cleanup_loop(), vps.run(), vps.monitor_loop())]
     log.info("Запущено камер: %d", len(workers))
     yield
     for t in tasks:
@@ -242,25 +241,19 @@ async def events_page(request: Request, user: str = Depends(page_user), q: str =
 
 
 # --- API ---------------------------------------------------------------------------------
-@app.post("/api/open")
-async def api_open(request: Request, user: str = Depends(api_user)):
-    ok, detail = await controller.open_gate(f"вручную ({user})", force=True)
-    db.add_event(camera="-", decision="manual" if ok else "error", detail=f"{user}: {detail}")
-    return JSONResponse({"ok": ok, "detail": detail}, status_code=200 if ok else 503)
-
-
 @app.get("/api/status")
 async def api_status(user: str = Depends(api_user)):
     return {
         "agent": hub.status(),
         "cameras": [w.status() for w in workers.values()],
-        "bitrix24": {
-            "enabled": bot.enabled,
-            "ready": bot.ready,
-            "internet": bot.offline_since is None if bot.enabled else None,
-            "last_outage": bot.last_outage,
+        "vps": {
+            "enabled": vps.enabled,
+            "online": vps.online if vps.enabled else None,
+            "last_sync": vps.last_ok or None,
+            "error": vps.last_error,
+            "last_outage": vps.last_outage,
         },
-        "uptime": round(time.time() - bot.started_at),
+        "uptime": round(time.time() - vps.started_at),
         "time": time.time(),
     }
 

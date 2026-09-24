@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 import tempfile
@@ -49,9 +50,10 @@ def test_plates_crud(client):
     assert client.get("/api/plates").json() == []
 
 
-def test_open_without_agent(client):
+def test_no_manual_open(client):
+    # ручного открытия нет: только номера из списка и пульт
     r = client.post("/api/open", headers={"Authorization": "Bearer api-token"})
-    assert r.status_code == 503 and not r.json()["ok"]
+    assert r.status_code in (404, 405)
 
 
 def test_agent_rejects_bad_token(client):
@@ -68,7 +70,7 @@ def test_open_via_agent(client):
         result = {}
 
         def call():
-            result["r"] = client.post("/api/open", headers={"Authorization": "Bearer api-token"})
+            result["r"] = client.portal.call(functools.partial(main.controller.open_gate, "тест"))
 
         t = threading.Thread(target=call)
         t.start()
@@ -76,7 +78,7 @@ def test_open_via_agent(client):
         assert msg["type"] == "open"
         ws.send_text(json.dumps({"type": "ack", "id": msg["id"], "ok": True}))
         t.join(5)
-        assert result["r"].json()["ok"] is True
+        assert result["r"][0] is True
         status = client.get("/api/status", headers={"Authorization": "Bearer api-token"}).json()
         assert status["agent"]["online"] and status["agent"]["info"]["driver"] == "dummy"
 

@@ -1,12 +1,26 @@
-# VPS: только Uptime Kuma — сторож, который замечает пропажу связи с объектом.
-# Запуск: docker compose up -d
+# VPS: Uptime Kuma + бот Битрикс24 (уведомления и список номеров).
+# Запуск: docker compose up -d --build
 services:
   kuma:
     image: louislam/uptime-kuma:2
     container_name: kuma
     restart: unless-stopped
     ports:
-      # веб-интерфейс Kuma и адрес для сигналов с объекта: http://IP-VPS:3001
+      # веб-интерфейс Kuma и приём сигналов с объекта: http://IP-VPS:3001
       - "3001:3001"
     volumes:
-      - ./data:/app/data
+      - ./data/kuma:/app/data
+
+  bot:
+    build: ./bot
+    container_name: gate-bot
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # сюда ПК у ворот отправляет данные и уведомления: http://IP-VPS:8080
+      - "8080:8080"
+    volumes:
+      - ./data/bot:/data
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

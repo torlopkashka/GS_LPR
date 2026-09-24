@@ -59,29 +59,20 @@ class GateConfig:
 
 
 @dataclass
-class Bitrix24Config:
-    # Входящий вебхук Битрикс24 с правами imbot: https://портал.bitrix24.ru/rest/1/xxxxxxxx/
-    webhook_url: str = ""
-    # Секрет бота (до 40 символов). Задаётся один раз, при смене бот регистрируется заново
-    bot_token: str = ""
-    bot_code: str = "gs_lpr_gate"
-    bot_name: str = "Ворота"
-    # ID сотрудников Битрикс24, которым разрешено управлять воротами
-    user_ids: list[int] = field(default_factory=list)
-    # Куда слать уведомления: "chat123" — групповой чат, "15" — личный диалог.
-    # Пусто — бот сам создаст групповой чат «Ворота» с сотрудниками из user_ids
-    dialog_id: str = ""
-    poll_interval: float = 3.0
+class VpsConfig:
+    """Обмен с ботом Битрикс24 на VPS (уведомления и правки списка номеров)."""
+    # Адрес бота на VPS: http://IP-VPS:8080
+    url: str = ""
+    # Общий секрет, должен совпадать с SITE_TOKEN в vps/.env
+    token: str = ""
+    site_name: str = "Ворота"
+    # Как часто обмениваться данными с VPS, секунд
+    sync_interval: float = 10
     notify_granted: bool = True
     notify_denied: bool = True
-    # Кнопки «Открыть» / «Добавить в список» под уведомлением о неизвестном номере
-    interactive: bool = True
-    # Команда «открыть», нажатая больше N секунд назад (например, пока не было
-    # интернета), не выполняется
-    max_command_age: float = 120
-    # Кнопку «Открыть» под уведомлением можно нажать не позже, чем через N секунд
-    max_callback_age: float = 900
-    # Обрыв связи короче N секунд не считается (в отчёт о восстановлении не попадает)
+    # Кнопка «В список» под уведомлением о неизвестном номере
+    add_button: bool = True
+    # Обрыв связи короче N секунд не считается (отчёт о восстановлении не отправляется)
     outage_min: float = 60
     # Предупреждать, если агент ворот / камера не на связи дольше N секунд
     agent_alert_after: float = 30
@@ -102,7 +93,7 @@ class Config:
     cameras: list[CameraConfig]
     recognition: RecognitionConfig
     gate: GateConfig
-    bitrix24: Bitrix24Config
+    vps: VpsConfig
     data_dir: Path
     healthcheck: HealthcheckConfig = field(default_factory=HealthcheckConfig)
     retention_days: int = 30
@@ -125,14 +116,9 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
     raw = raw or {}
 
     cameras = [_section(CameraConfig, c) for c in raw.get("cameras", [])]
-    b24 = _section(Bitrix24Config, raw.get("bitrix24"))
-    b24.webhook_url = os.environ.get("B24_WEBHOOK_URL") or b24.webhook_url
-    b24.bot_token = os.environ.get("B24_BOT_TOKEN") or b24.bot_token
-    b24.dialog_id = os.environ.get("B24_DIALOG_ID") or b24.dialog_id
-    if os.environ.get("B24_USER_IDS"):
-        b24.user_ids = [int(x) for x in os.environ["B24_USER_IDS"].split(",") if x.strip()]
-    if len(b24.bot_token) > 40:
-        raise RuntimeError("B24_BOT_TOKEN должен быть не длиннее 40 символов")
+    vps = _section(VpsConfig, raw.get("vps"))
+    vps.url = os.environ.get("VPS_URL") or vps.url
+    vps.token = os.environ.get("VPS_TOKEN") or vps.token
 
     healthcheck = _section(HealthcheckConfig, raw.get("healthcheck"))
     healthcheck.url = os.environ.get("HEALTHCHECK_URL", healthcheck.url)
@@ -142,7 +128,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         cameras=cameras,
         recognition=_section(RecognitionConfig, raw.get("recognition")),
         gate=_section(GateConfig, raw.get("gate")),
-        bitrix24=b24,
+        vps=vps,
         data_dir=Path(os.environ.get("LPR_DATA_DIR", raw.get("data_dir", "data"))),
         retention_days=int(raw.get("retention_days", 30)),
         admin_user=os.environ.get("ADMIN_USER", "admin"),

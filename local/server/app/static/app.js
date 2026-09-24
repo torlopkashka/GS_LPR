@@ -13,13 +13,13 @@
         : 'НЕ на связи';
       agentEl.className = s.agent.online ? 'ok' : 'bad';
       const net = document.getElementById('net');
-      const bx = s.bitrix24;
-      if (bx.enabled) {
-        net.textContent = !bx.internet ? 'Интернет: НЕТ связи с Битрикс24'
-          : bx.ready ? 'Битрикс24: бот на связи' : 'Битрикс24: бот настраивается…';
-        net.className = 'small ' + (bx.internet && bx.ready ? 'muted' : 'bad');
+      const vps = s.vps;
+      if (vps.enabled) {
+        net.textContent = vps.online ? 'Связь с VPS (Битрикс24): есть'
+          : 'Связь с VPS: НЕТ' + (vps.error ? ' — ' + vps.error : '');
+        net.className = 'small ' + (vps.online ? 'muted' : 'bad');
       } else {
-        net.textContent = 'Бот Битрикс24 не настроен';
+        net.textContent = 'Связь с VPS не настроена — уведомлений в Битрикс24 не будет';
       }
       for (const c of s.cameras) {
         const el = document.querySelector(`[data-cam="${c.id}"] .cam-status`);
@@ -49,17 +49,6 @@
     const r = await fetch('/partials/events');
     if (r.ok) document.getElementById('events-body').innerHTML = await r.text();
   }
-
-  document.getElementById('open-btn').addEventListener('click', async (ev) => {
-    const btn = ev.currentTarget;
-    if (!confirm('Открыть ворота?')) return;
-    btn.disabled = true;
-    try {
-      const r = await fetch('/api/open', { method: 'POST' });
-      const d = await r.json();
-      alert(d.ok ? 'Команда отправлена' : 'Ошибка: ' + d.detail);
-    } finally { btn.disabled = false; events(); }
-  });
 
   status(); previews();
   setInterval(status, 3000);
