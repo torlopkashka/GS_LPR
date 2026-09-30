@@ -70,8 +70,8 @@ docs/
    Результат: чат «Ворота» в Битрикс24, `VPS_URL` / `VPS_TOKEN` и Push URL для ПК.
 2. **ПК у ворот**: [docs/local.md](docs/local.md) — Windows, Docker Desktop, камеры, `setup.ps1`,
    агент ворот, связь с VPS.
-3. **Провода к воротам**: [docs/gate-control.md](docs/gate-control.md). Лучше всего реле на вход
-   **OPEN** (или **SbS**) блока управления привода.
+3. **Провода к воротам**: [docs/gate-control.md](docs/gate-control.md). Реле подключается к входу
+   **OPEN** блока управления привода (схема и настройка автозакрытия в инструкции).
 
 ## Как пользоваться ботом
 
