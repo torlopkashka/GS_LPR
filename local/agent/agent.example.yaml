@@ -36,8 +36,9 @@ http:
   # pulse_url: http://192.168.1.60/button/gate_open/press
   # method: POST
 
-# Реле eWeLink на заводской прошивке через облако eWeLink (driver: ewelink).
-# Временный вариант: нужен интернет на этом ПК. Подробно: docs/gate-control.md, раздел «Облако eWeLink».
+# Реле eWeLink на заводской прошивке (driver: ewelink). Сначала команда идёт по локальной сети
+# (интернет не нужен; включается командой `python ewelink_setup.py lan`), при сбое — через облако.
+# Подробно: docs/gate-control.md, раздел «Облако eWeLink и локальная сеть».
 ewelink:
   appid: ВАШ_APPID                  # ключи приложения с портала разработчика https://dev.ewelink.cc
   appsecret: ВАШ_APP_SECRET         # хранится в тайне
@@ -45,6 +46,8 @@ ewelink:
   device_id: ""                     # узнать: python ewelink_setup.py devices
   token_file: ewelink_token.json    # создаётся командой python ewelink_setup.py login
   timeout: 8
+  lan_file: ewelink_lan.json        # создаётся командой python ewelink_setup.py lan (ключ реле и его адрес)
+  # lan_host: 192.168.1.50          # адрес реле вручную, если нужно задать его принудительно
 
 # Raspberry Pi + модуль реле (только Linux)
 gpio:

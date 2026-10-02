@@ -7,6 +7,8 @@
   python ewelink_setup.py devices     список устройств аккаунта: device_id, состояние, Inching
   python ewelink_setup.py inching     включить Inching на реле: оно само выключится через 1 с
   python ewelink_setup.py refresh     принудительно обновить токены
+  python ewelink_setup.py lan         включить управление по локальной сети: взять ключ реле из облака,
+                                      найти реле в сети и проверить связь (ключ: --key, адрес: --host)
 
 Параметры берутся из раздела `ewelink:` файла agent.yaml (appid, appsecret, redirect_url, device_id).
 """
@@ -23,6 +25,7 @@ import webbrowser
 
 import yaml
 
+import ewelink_lan
 from ewelink_cloud import EweLinkClient, EweLinkError, make_nonce
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -157,6 +160,50 @@ def cmd_inching(client: EweLinkClient, cfg: dict, args) -> None:
     print(f"Команда отправлена: Inching включён, импульс {ms / 1000:g} с. Проверка: python ewelink_setup.py devices")
 
 
+def lan_file_path(cfg: dict) -> str:
+    path = cfg.get("lan_file", "ewelink_lan.json")
+    return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+
+
+def cmd_lan(client: EweLinkClient, cfg: dict, args) -> None:
+    device_id = str(cfg.get("device_id") or "")
+    if not device_id:
+        sys.exit("Сначала укажите device_id в разделе ewelink файла agent.yaml (см. команду devices)")
+    key = args.key
+    if not key:
+        found = [d for d in client.devices() if d["deviceid"] == device_id]
+        if not found:
+            sys.exit(f"Устройство {device_id} не найдено в аккаунте. Проверьте device_id (команда devices)")
+        key = found[0].get("devicekey")
+        if not key:
+            sys.exit("Облако не вернуло devicekey этого реле. Если ключ известен, передайте его: --key КЛЮЧ")
+    print("Ключ реле получен." if not args.key else "Ключ взят из параметра --key.")
+    host = args.host
+    if host:
+        if ewelink_lan.probe(host, device_id, key) is None:
+            sys.exit(f"По адресу {host}:8081 реле не отвечает. Проверьте адрес, что реле в сети и что "
+                     "в приложении eWeLink включено «Управление по локальной сети»")
+    else:
+        print(f"Ищу реле в локальной сети (адрес этого ПК: {ewelink_lan.local_ip() or 'не определён'}), до 30 секунд ...")
+        host = ewelink_lan.discover(device_id, key, log=print)
+        if not host:
+            sys.exit("Реле в сети не найдено. Проверьте:\n"
+                     "  - ПК и реле в одной сети (одна Wi-Fi-сеть или сеть роутера, без «изоляции клиентов»);\n"
+                     "  - в приложении eWeLink включено «Управление по локальной сети»;\n"
+                     "  - брандмауэр Windows разрешает Python в частной сети.\n"
+                     "Адрес реле также виден в списке клиентов роутера (имя вида ESP_xxxxxx); "
+                     "передайте его: python ewelink_setup.py lan --host 192.168.1.50")
+    info = ewelink_lan.probe(host, device_id, key) or {}
+    ewelink_lan.save_state(lan_file_path(cfg), {"deviceid": device_id, "devicekey": key, "host": host})
+    print(f"Реле найдено: {host}. Параметры сохранены в {lan_file_path(cfg)} (файл секретный, не публикуйте).")
+    pulse, width = info.get("pulse"), info.get("pulseWidth")
+    if pulse is not None:
+        print(f"Inching: {pulse}" + (f", {width / 1000:g} с" if isinstance(width, (int, float)) else ""))
+    print("\nРекомендуется закрепить за реле этот адрес в роутере (резервирование DHCP). "
+          "Если адрес всё же изменится, агент найдёт реле заново сам.")
+    print("Проверка открытия ворот: python gate_agent.py --test")
+
+
 def cmd_refresh(client: EweLinkClient, cfg: dict, args) -> None:
     client.refresh()
     print("Токены обновлены")
@@ -172,12 +219,15 @@ def main() -> None:
     p = sub.add_parser("inching", help="включить Inching на реле")
     p.add_argument("ms", nargs="?", type=int, default=1000, help="длительность импульса, мс (по умолчанию 1000)")
     sub.add_parser("refresh", help="обновить токены")
+    p = sub.add_parser("lan", help="включить управление по локальной сети")
+    p.add_argument("--host", help="IP-адрес реле, если автопоиск не нашёл его")
+    p.add_argument("--key", help="devicekey реле, если облако его не отдаёт")
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
     client = make_client(cfg)
     try:
-        {"login": cmd_login, "devices": cmd_devices, "inching": cmd_inching, "refresh": cmd_refresh}[args.cmd](
+        {"login": cmd_login, "devices": cmd_devices, "inching": cmd_inching, "refresh": cmd_refresh, "lan": cmd_lan}[args.cmd](
             client, cfg, args)
     except EweLinkError as e:
         sys.exit(f"Ошибка: {e}")

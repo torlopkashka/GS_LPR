@@ -10,7 +10,7 @@
   serial   — USB-реле на CH340 (LCUS-1/2/4 и аналоги, «виртуальный COM-порт»)
   hid      — USB HID-реле (USBRelay1/2, «dcttech», VID 16c0 PID 05df)
   http     — сетевое реле (Shelly, Sonoff с Tasmota, ESPHome)
-  ewelink  — реле eWeLink на заводской прошивке через облако eWeLink (временный вариант)
+  ewelink  — реле eWeLink на заводской прошивке: по локальной сети, запасной путь — облако eWeLink
   gpio     — выход GPIO Raspberry Pi (через модуль реле)
   command  — произвольная команда оболочки
   dummy    — только запись в журнал (для проверки связи)
@@ -182,7 +182,12 @@ class GpioDriver(Driver):
 
 
 class EweLinkDriver(Driver):
-    """Реле eWeLink на заводской прошивке: команда через облако eWeLink (нужен интернет).
+    """Реле eWeLink на заводской прошивке: сначала по локальной сети, при сбое через облако.
+
+    Локальный режим (интернет не нужен) включается, когда есть файл lan_file с device_id, devicekey
+    и адресом реле: его создаёт `python ewelink_setup.py lan`. Облако (нужен интернет и вход
+    командой `ewelink_setup.py login`) служит запасным путём; без appid в agent.yaml агент
+    работает только по локальной сети.
 
     Длительность импульса задаёт сам модуль: в приложении eWeLink включите «Inching» на 1 с
     или выполните `python ewelink_setup.py inching`. Агент отправляет только «включить»,
@@ -197,21 +202,46 @@ class EweLinkDriver(Driver):
 
     def __init__(self, cfg: dict):
         super().__init__(cfg)
-        from ewelink_cloud import EweLinkClient
+        import ewelink_lan
 
-        token_file = cfg.get("token_file", "ewelink_token.json")
-        if not os.path.isabs(token_file):
-            token_file = os.path.join(BASE_DIR, token_file)
-        self.client = EweLinkClient(str(cfg["appid"]), str(cfg["appsecret"]), token_file,
-                                    api_base=cfg.get("api_base"), timeout=float(cfg.get("timeout", 8)))
+        self.lan = ewelink_lan
+        self.client = None
+        if cfg.get("appid") and cfg.get("appsecret"):
+            from ewelink_cloud import EweLinkClient
+
+            token_file = cfg.get("token_file", "ewelink_token.json")
+            if not os.path.isabs(token_file):
+                token_file = os.path.join(BASE_DIR, token_file)
+            self.client = EweLinkClient(str(cfg["appid"]), str(cfg["appsecret"]), token_file,
+                                        api_base=cfg.get("api_base"), timeout=float(cfg.get("timeout", 8)))
         self.device_id = str(cfg["device_id"])
+        lan_file = cfg.get("lan_file", "ewelink_lan.json")
+        self.lan_file = lan_file if os.path.isabs(lan_file) else os.path.join(BASE_DIR, lan_file)
+        st = ewelink_lan.load_state(self.lan_file)
+        self.lan_key = st.get("devicekey") if st.get("deviceid") in (None, self.device_id) else None
+        self.lan_host = cfg.get("lan_host") or st.get("host")
+        if not self.lan_key and not self.client:
+            raise RuntimeError("ewelink: не настроен ни локальный режим (python ewelink_setup.py lan), "
+                               "ни облако (appid и appsecret в agent.yaml)")
         self.unsafe = ""
         self._checked = 0.0
         self.last_response = ""
 
+    # --- параметры реле и проверка Inching -----------------------------------------------
+    def _params(self) -> dict:
+        errors = []
+        if self.lan_key and self.lan_host:
+            try:
+                return self.lan.send(self.lan_host, self.device_id, self.lan_key, "info", {}, timeout=3.0, retries=2)
+            except self.lan.LanError as e:
+                errors.append(str(e))
+        if self.client:
+            return self.client.status(self.device_id)
+        raise RuntimeError("; ".join(errors) or "нет способа связаться с реле")
+
     def check_config(self) -> None:
         """Проверяет, что реле сделает короткий импульс и выключится само."""
-        params = self.client.status(self.device_id)
+        params = self._params()
         pulse, width = params.get("pulse"), params.get("pulseWidth")
         if pulse == "off":
             self.unsafe = ("у реле выключен режим Inching: после команды оно осталось бы включённым, а ворота "
@@ -223,17 +253,44 @@ class EweLinkDriver(Driver):
         else:
             self.unsafe = ""
             if pulse is None:
-                log.warning("Облако не сообщило настройки Inching: проверьте их вручную (python ewelink_setup.py devices)")
+                log.warning("Реле не сообщило настройки Inching: проверьте их вручную (python ewelink_setup.py devices)")
         self._checked = time.time()
 
     def maintain(self) -> None:
         """Вызывается агентом периодически: плановое обновление токенов и проверка Inching."""
-        if self.client.refresh_if_older(self.REFRESH_EVERY):
+        if self.client and self.client.load_tokens() and self.client.refresh_if_older(self.REFRESH_EVERY):
             log.info("Токены eWeLink обновлены")
         if self.unsafe or time.time() - self._checked >= self.CHECK_EVERY:
-            self.check_config()
+            try:
+                self.check_config()
+            except Exception as e:
+                # без связи с реле и облаком проверить нечего: прошлый результат остаётся в силе
+                self._checked = time.time() - self.CHECK_EVERY + 600
+                log.warning("Не удалось проверить Inching: %s", explain_error(e))
             if self.unsafe:
                 log.error("Открытие ворот через eWeLink заблокировано: %s", self.unsafe)
+
+    # --- команды -------------------------------------------------------------------------
+    def _lan_pulse(self) -> None:
+        lan = self.lan
+        try:
+            if not self.lan_host:
+                raise lan.LanError("адрес реле неизвестен")
+            lan.switch_on(self.lan_host, self.device_id, self.lan_key)
+        except lan.LanError as first:
+            # возможно, роутер выдал реле другой адрес: найти заново и повторить один раз
+            host = lan.discover(self.device_id, self.lan_key, log=log.info)
+            if not host:
+                raise first from None
+            log.info("Реле найдено по новому адресу %s", host)
+            lan.switch_on(host, self.device_id, self.lan_key)
+            self.lan_host = host
+            st = lan.load_state(self.lan_file)
+            st.update(deviceid=self.device_id, devicekey=self.lan_key, host=host)
+            try:
+                lan.save_state(self.lan_file, st)
+            except OSError:
+                pass
 
     def pulse(self, seconds: float) -> None:
         if self.unsafe:
@@ -243,14 +300,32 @@ class EweLinkDriver(Driver):
                 pass
             if self.unsafe:
                 raise RuntimeError(self.unsafe)
+        lan_error = None
+        if self.lan_key:
+            try:
+                self._lan_pulse()
+                self.last_response = "реле приняло команду «включить» по локальной сети (длительность задаёт Inching)"
+                return
+            except self.lan.LanError as e:
+                lan_error = e
+                if not self.client:
+                    raise
+                log.warning("Локальная сеть не сработала (%s), пробую облако eWeLink", e)
         self.client.set_switch(self.device_id, "on")
-        self.last_response = "облако eWeLink приняло команду «включить» (длительность задаёт Inching реле)"
+        self.last_response = ("облако eWeLink приняло команду «включить» (длительность задаёт Inching реле)"
+                              + (f"; по локальной сети не вышло: {lan_error}" if lan_error else ""))
 
     def on(self) -> None:
-        self.client.set_switch(self.device_id, "on")
+        if self.client:
+            self.client.set_switch(self.device_id, "on")
+        else:
+            self.lan.switch_on(self.lan_host, self.device_id, self.lan_key)
 
     def off(self) -> None:
-        self.client.set_switch(self.device_id, "off")
+        if self.client:
+            self.client.set_switch(self.device_id, "off")
+        else:
+            self.lan.send(self.lan_host, self.device_id, self.lan_key, "switch", {"switch": "off"})
 
 
 class CommandDriver(Driver):
@@ -287,7 +362,7 @@ def explain_error(e: Exception) -> str:
     if isinstance(e, urllib.error.URLError):
         return (f"нет связи с реле ({e.reason}). Проверьте IP-адрес реле в pulse_url, "
                 "питание реле и Wi-Fi (только 2,4 ГГц)")
-    if type(e).__name__ == "EweLinkError" or isinstance(e, RuntimeError):
+    if type(e).__name__ in ("EweLinkError", "LanError") or isinstance(e, RuntimeError):
         return str(e)
     if isinstance(e, KeyError):
         return f"в agent.yaml не найден параметр {e}. Проверьте раздел выбранного драйвера"
