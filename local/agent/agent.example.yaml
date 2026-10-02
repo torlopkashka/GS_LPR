@@ -4,6 +4,7 @@ token: REPLACE_WITH_AGENT_TOKEN   # значение AGENT_TOKEN из файла
 name: gate-pc
 
 # Способ управления: serial | hid | http | gpio | command | dummy
+# Для Wi-Fi-реле (Sonoff SV и др.) укажите http и заполните раздел http ниже
 driver: serial
 max_pulse: 3        # защита: не держать реле дольше N секунд
 
@@ -21,19 +22,19 @@ hid:
   product_id: "0x05df"
   channel: 1
 
-# Сетевое реле. Shelly Plus 1 / Shelly 1 Gen3 (само выключится через 1 с):
+# Сетевое реле (driver: http). Оставьте ОДИН активный pulse_url. Длительность импульса
+# задаётся в самом реле, агент только посылает команду.
 http:
-  pulse_url: http://192.168.1.50/rpc/Switch.Set?id=0&on=true&toggle_after=1
+  # Sonoff SV с прошивкой Tasmota (в Tasmota: PulseTime1 10 и PowerOnState 0, см. docs/gate-control.md).
+  # Если в Tasmota не задан WebPassword, уберите из адреса user=admin&password=ПАРОЛЬ&
+  pulse_url: http://192.168.1.60/cm?user=admin&password=ПАРОЛЬ&cmnd=Power%20On
+  # Shelly Plus 1 / Shelly 1 Gen3 (само выключится через 1 с):
+  # pulse_url: http://192.168.1.50/rpc/Switch.Set?id=0&on=true&toggle_after=1
   # Shelly 1 первого поколения:
   # pulse_url: http://192.168.1.50/relay/0?turn=on&timer=1
   # ESPHome (кнопка "gate_open" в web_server):
   # pulse_url: http://192.168.1.60/button/gate_open/press
   # method: POST
-
-# Sonoff SV (5–12 В) с прошивкой Tasmota. В Tasmota: PulseTime1 10 и PowerOnState 0
-# (подробнее docs/gate-control.md, раздел «Sonoff SV»):
-# http:
-#   pulse_url: http://192.168.1.60/cm?user=admin&password=ПАРОЛЬ&cmnd=Power%20On
 
 # Raspberry Pi + модуль реле (только Linux)
 gpio:

@@ -25,7 +25,9 @@ import logging.handlers
 import platform
 import socket
 import subprocess
+import sys
 import time
+import urllib.error
 import urllib.request
 
 import yaml
@@ -131,6 +133,7 @@ class HttpDriver(Driver):
     """
 
     name = "http"
+    last_response = ""
 
     def _req(self, url: str):
         method = self.cfg.get("method", "GET").upper()
@@ -141,6 +144,7 @@ class HttpDriver(Driver):
         with urllib.request.urlopen(req, timeout=float(self.cfg.get("timeout", 5))) as r:
             if r.status >= 300:
                 raise RuntimeError(f"HTTP {r.status}")
+            self.last_response = r.read(300).decode("utf-8", "replace").strip()
 
     def pulse(self, seconds: float):
         if self.cfg.get("pulse_url"):
@@ -195,6 +199,21 @@ class CommandDriver(Driver):
 
 
 DRIVERS = {d.name: d for d in (DummyDriver, SerialDriver, HidDriver, HttpDriver, GpioDriver, CommandDriver)}
+
+
+def explain_error(e: Exception) -> str:
+    """Понятное объяснение типичных ошибок реле (адрес с паролем в журнал не попадает)."""
+    if isinstance(e, urllib.error.HTTPError):
+        hint = {401: "неверный логин или пароль в pulse_url",
+                403: "доступ запрещён: проверьте логин и пароль в pulse_url",
+                404: "неверный путь в pulse_url"}.get(e.code, "")
+        return f"реле ответило HTTP {e.code} {e.reason}. {hint}".strip()
+    if isinstance(e, urllib.error.URLError):
+        return (f"нет связи с реле ({e.reason}). Проверьте IP-адрес реле в pulse_url, "
+                "питание реле и Wi-Fi (только 2,4 ГГц)")
+    if isinstance(e, KeyError):
+        return f"в agent.yaml не найден параметр {e}. Проверьте раздел выбранного драйвера"
+    return f"{type(e).__name__}: {e}"
 
 
 def make_driver(cfg: dict) -> Driver:
@@ -276,9 +295,16 @@ def main():
     with open(args.config, encoding="utf-8-sig") as f:
         cfg = yaml.safe_load(f)
     if args.test:
-        drv = make_driver(cfg)
-        log.info("Тестовый импульс через драйвер %s", drv.name)
-        drv.pulse(float(cfg.get("test_pulse", 1)))
+        try:
+            drv = make_driver(cfg)
+            log.info("Тестовый импульс через драйвер %s", drv.name)
+            drv.pulse(float(cfg.get("test_pulse", 1)))
+        except Exception as e:
+            log.error("Тест не пройден: %s", explain_error(e))
+            sys.exit(1)
+        if getattr(drv, "last_response", ""):
+            log.info("Ответ реле: %s", drv.last_response)
+        log.info("Готово: реле приняло команду. Должен щёлкнуть реле, а ворота начать движение.")
         return
     asyncio.run(Agent(cfg).run())
 
