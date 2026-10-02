@@ -299,6 +299,9 @@ class CameraWorker(threading.Thread):
         for raw, conf, (x1, y1, x2, y2) in results:
             box = (x1 + ox, y1 + oy, x2 + ox, y2 + oy)
             boxes.append((raw, conf, box))
+            if box[2] - box[0] < self.cam.min_plate_width:
+                log.debug("[%s] слишком мелкий номер %s (%d px)", self.cam.id, raw, box[2] - box[0])
+                continue
             text = clean_reading(raw, self.rcfg.plate_format)
             if not text or conf < self.rcfg.min_ocr_conf:
                 log.debug("[%s] отброшено: %s (%.2f)", self.cam.id, raw, conf)

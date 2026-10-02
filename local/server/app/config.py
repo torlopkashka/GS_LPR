@@ -24,6 +24,8 @@ class CameraConfig:
     # и отсекает номера машин на дороге.
     roi: list[float] | None = None
     process_fps: float = 4.0
+    # Минимальная ширина номера в кадре, пикселей: более мелкие (машины вдалеке) игнорируются
+    min_plate_width: int = 0
     # Раз в сколько секунд анализировать кадр при отсутствии движения (0 — никогда)
     idle_interval: float = 2.0
     motion_threshold: float = 0.004
