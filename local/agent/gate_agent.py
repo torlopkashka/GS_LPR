@@ -9,7 +9,8 @@
 Поддерживаемые способы управления (параметр driver в agent.yaml):
   serial   — USB-реле на CH340 (LCUS-1/2/4 и аналоги, «виртуальный COM-порт»)
   hid      — USB HID-реле (USBRelay1/2, «dcttech», VID 16c0 PID 05df)
-  http     — сетевое реле (Shelly, Sonoff в режиме DIY, ESPHome, Nice IT4WIFI через шлюз)
+  http     — сетевое реле (Shelly, Sonoff с Tasmota, ESPHome)
+  ewelink  — реле eWeLink на заводской прошивке через облако eWeLink (временный вариант)
   gpio     — выход GPIO Raspberry Pi (через модуль реле)
   command  — произвольная команда оболочки
   dummy    — только запись в журнал (для проверки связи)
@@ -22,6 +23,7 @@ import asyncio
 import json
 import logging
 import logging.handlers
+import os
 import platform
 import socket
 import subprocess
@@ -31,6 +33,8 @@ import urllib.error
 import urllib.request
 
 import yaml
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 log = logging.getLogger("gate-agent")
 VERSION = "1.0"
@@ -177,6 +181,78 @@ class GpioDriver(Driver):
         self.dev.off()
 
 
+class EweLinkDriver(Driver):
+    """Реле eWeLink на заводской прошивке: команда через облако eWeLink (нужен интернет).
+
+    Длительность импульса задаёт сам модуль: в приложении eWeLink включите «Inching» на 1 с
+    или выполните `python ewelink_setup.py inching`. Агент отправляет только «включить»,
+    реле само выключится. Если Inching выключен или длиннее 2,5 с, команда блокируется:
+    иначе реле осталось бы включённым, и привод держал бы ворота открытыми.
+    """
+
+    name = "ewelink"
+    MAX_PULSE_MS = 2500
+    CHECK_EVERY = 6 * 3600       # как часто проверять настройку Inching
+    REFRESH_EVERY = 7 * 86400    # как часто обновлять токены (access token живёт 30 дней)
+
+    def __init__(self, cfg: dict):
+        super().__init__(cfg)
+        from ewelink_cloud import EweLinkClient
+
+        token_file = cfg.get("token_file", "ewelink_token.json")
+        if not os.path.isabs(token_file):
+            token_file = os.path.join(BASE_DIR, token_file)
+        self.client = EweLinkClient(str(cfg["appid"]), str(cfg["appsecret"]), token_file,
+                                    api_base=cfg.get("api_base"), timeout=float(cfg.get("timeout", 8)))
+        self.device_id = str(cfg["device_id"])
+        self.unsafe = ""
+        self._checked = 0.0
+        self.last_response = ""
+
+    def check_config(self) -> None:
+        """Проверяет, что реле сделает короткий импульс и выключится само."""
+        params = self.client.status(self.device_id)
+        pulse, width = params.get("pulse"), params.get("pulseWidth")
+        if pulse == "off":
+            self.unsafe = ("у реле выключен режим Inching: после команды оно осталось бы включённым, а ворота "
+                           "открытыми. Включите Inching на 1 с в приложении eWeLink или командой "
+                           "python ewelink_setup.py inching")
+        elif isinstance(width, (int, float)) and width > self.MAX_PULSE_MS:
+            self.unsafe = (f"длительность Inching {width / 1000:g} с больше допустимых 2,5 с: привод Nice "
+                           "воспримет команду дольше 3 секунд как «держать открытым». Задайте 1 с")
+        else:
+            self.unsafe = ""
+            if pulse is None:
+                log.warning("Облако не сообщило настройки Inching: проверьте их вручную (python ewelink_setup.py devices)")
+        self._checked = time.time()
+
+    def maintain(self) -> None:
+        """Вызывается агентом периодически: плановое обновление токенов и проверка Inching."""
+        if self.client.refresh_if_older(self.REFRESH_EVERY):
+            log.info("Токены eWeLink обновлены")
+        if self.unsafe or time.time() - self._checked >= self.CHECK_EVERY:
+            self.check_config()
+            if self.unsafe:
+                log.error("Открытие ворот через eWeLink заблокировано: %s", self.unsafe)
+
+    def pulse(self, seconds: float) -> None:
+        if self.unsafe:
+            try:
+                self.check_config()  # возможно, настройку уже исправили
+            except Exception:
+                pass
+            if self.unsafe:
+                raise RuntimeError(self.unsafe)
+        self.client.set_switch(self.device_id, "on")
+        self.last_response = "облако eWeLink приняло команду «включить» (длительность задаёт Inching реле)"
+
+    def on(self) -> None:
+        self.client.set_switch(self.device_id, "on")
+
+    def off(self) -> None:
+        self.client.set_switch(self.device_id, "off")
+
+
 class CommandDriver(Driver):
     name = "command"
 
@@ -198,7 +274,7 @@ class CommandDriver(Driver):
         self._run("off_cmd")
 
 
-DRIVERS = {d.name: d for d in (DummyDriver, SerialDriver, HidDriver, HttpDriver, GpioDriver, CommandDriver)}
+DRIVERS = {d.name: d for d in (DummyDriver, SerialDriver, HidDriver, HttpDriver, EweLinkDriver, GpioDriver, CommandDriver)}
 
 
 def explain_error(e: Exception) -> str:
@@ -211,6 +287,8 @@ def explain_error(e: Exception) -> str:
     if isinstance(e, urllib.error.URLError):
         return (f"нет связи с реле ({e.reason}). Проверьте IP-адрес реле в pulse_url, "
                 "питание реле и Wi-Fi (только 2,4 ГГц)")
+    if type(e).__name__ == "EweLinkError" or isinstance(e, RuntimeError):
+        return str(e)
     if isinstance(e, KeyError):
         return f"в agent.yaml не найден параметр {e}. Проверьте раздел выбранного драйвера"
     return f"{type(e).__name__}: {e}"
@@ -248,9 +326,22 @@ class Agent:
                 log.exception("Ошибка управления реле")
                 return {"type": "ack", "id": msg.get("id"), "ok": False, "error": str(e)}
 
+    async def maintain_loop(self):
+        """Плановое обслуживание драйвера (токены облака, проверка настроек реле)."""
+        maintain = getattr(self.driver, "maintain", None)
+        if maintain is None:
+            return
+        while True:
+            try:
+                await asyncio.to_thread(maintain)
+            except Exception as e:
+                log.warning("Обслуживание реле: %s", explain_error(e))
+            await asyncio.sleep(600)
+
     async def run(self):
         from websockets.asyncio.client import connect
 
+        asyncio.create_task(self.maintain_loop())
         backoff = 2
         while True:
             try:
@@ -298,6 +389,8 @@ def main():
         try:
             drv = make_driver(cfg)
             log.info("Тестовый импульс через драйвер %s", drv.name)
+            if hasattr(drv, "maintain"):
+                drv.maintain()  # для облака: проверка токенов и режима Inching до подачи команды
             drv.pulse(float(cfg.get("test_pulse", 1)))
         except Exception as e:
             log.error("Тест не пройден: %s", explain_error(e))

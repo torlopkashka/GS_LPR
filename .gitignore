@@ -3,6 +3,7 @@
 data/
 local/server/config.yaml
 local/agent/agent.yaml
+local/agent/ewelink_token.json
 local/agent/agent.log*
 local/agent/venv/
 __pycache__/
