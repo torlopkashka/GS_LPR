@@ -37,7 +37,7 @@ if (-not (Test-Path "$Dir\agent.yaml")) {
     if (Test-Path $envFile) {
         $token = (Get-Content $envFile | Where-Object { $_ -match '^AGENT_TOKEN=' }) -replace '^AGENT_TOKEN=', '' -replace '\s+#.*$', ''
         if ($token) {
-            (Get-Content "$Dir\agent.yaml") -replace 'REPLACE_WITH_AGENT_TOKEN', $token.Trim() |
+            (Get-Content "$Dir\agent.yaml" -Encoding UTF8) -replace 'REPLACE_WITH_AGENT_TOKEN', $token.Trim() |
                 Set-Content "$Dir\agent.yaml" -Encoding UTF8
         }
     }

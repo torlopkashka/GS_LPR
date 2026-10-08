@@ -17,7 +17,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path ".env")) {
     $password = Read-Host "Придумайте пароль для веб-интерфейса (логин admin, без символов $ и #)"
-    $text = Get-Content ".env.example" -Raw
+    $text = Get-Content ".env.example" -Raw -Encoding UTF8
     $text = $text -replace 'ADMIN_PASSWORD=.*', ('ADMIN_PASSWORD=' + $password.Replace('$', '$$'))
     $text = $text -replace 'SECRET_KEY=.*', "SECRET_KEY=$(New-Secret)"
     $text = $text -replace 'AGENT_TOKEN=.*', "AGENT_TOKEN=$(New-Secret)"
