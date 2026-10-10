@@ -167,3 +167,70 @@ def test_driver_needs_some_transport(tmp_path):
         gate_agent.make_driver({"driver": "ewelink", "ewelink": {
             "device_id": DEVICE, "lan_file": str(tmp_path / "none.json")}})
     assert "локальный режим" in str(e.value)
+
+
+def test_probe_uses_getstate(relay):
+    assert lan.probe(relay.host, DEVICE, KEY) is not None
+    assert relay.log[-1][0] == "getState"
+
+
+def test_diagnose_verified(relay):
+    level, text = lan.diagnose(relay.host, DEVICE, KEY)
+    assert level == "verified" and "расшифрован" in text
+
+
+def test_diagnose_closed_port():
+    level, text = lan.diagnose("127.0.0.1:9", DEVICE, KEY, timeout=0.5)
+    assert level == "closed"
+
+
+def test_diagnose_open_but_not_verifiable(tmp_path):
+    """Заводская прошивка может отвечать на getState страницей HTML: порт открыт, ключ не подтверждён."""
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html>ok</html>")
+
+        def log_message(self, *a):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        level, text = lan.diagnose(f"127.0.0.1:{server.server_port}", DEVICE, KEY)
+    finally:
+        server.shutdown()
+    assert level == "open" and "не JSON" in text and "html" in text
+
+
+def test_driver_params_fall_back_to_cloud_when_lan_returns_nothing(tmp_path, cloud):
+    """Реле по локальной сети не сообщило параметры: Inching проверяется через облако."""
+    login(cloud)
+    cloud.params["pulse"] = "off"
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            iv = os.urandom(16)
+            reply = {"error": 0, "iv": base64.b64encode(iv).decode(), "data": base64.b64encode(
+                lan.aes_cbc_encrypt(lan._key(KEY), iv, b"{}")).decode()}
+            raw = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *a):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        drv = lan_driver(tmp_path, f"127.0.0.1:{server.server_port}", cloud)
+        drv.maintain()
+    finally:
+        server.shutdown()
+    assert "Inching" in drv.unsafe

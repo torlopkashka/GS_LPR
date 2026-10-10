@@ -232,7 +232,11 @@ class EweLinkDriver(Driver):
         errors = []
         if self.lan_key and self.lan_host:
             try:
-                return self.lan.send(self.lan_host, self.device_id, self.lan_key, "info", {}, timeout=3.0, retries=2)
+                params = self.lan.send(self.lan_host, self.device_id, self.lan_key, "getState", {},
+                                       timeout=3.0, retries=2)
+                if "switch" in params:
+                    return params
+                errors.append("реле не сообщило параметры по локальной сети")
             except self.lan.LanError as e:
                 errors.append(str(e))
         if self.client:

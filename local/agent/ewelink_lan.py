@@ -226,11 +226,52 @@ def switch_on(host: str, deviceid: str, devicekey: str, timeout: float = 3.0) ->
 
 
 def probe(host: str, deviceid: str, devicekey: str, timeout: float = 1.5) -> dict | None:
-    """Проверяет, что по адресу отвечает именно это реле (ответ расшифровывается его ключом)."""
+    """Проверяет, что по адресу отвечает именно это реле (ответ расшифровывается его ключом).
+
+    Используется запрос getState из проекта SonoffLAN: он ничего не включает. Запрос info
+    относится к режиму DIY и на заводской прошивке не работает."""
     try:
-        return send(host, deviceid, devicekey, "info", {}, timeout, retries=1)
+        return send(host, deviceid, devicekey, "getState", {}, timeout, retries=1)
     except (LanError, OSError):
         return None
+
+
+def diagnose(host: str, deviceid: str, devicekey: str, timeout: float = 3.0) -> tuple[str, str]:
+    """Подробная проверка адреса для команды lan. Возвращает (уровень, пояснение):
+    verified — реле ответило и ответ расшифрован ключом; open — порт открыт, но подтверждения
+    ключом нет (на заводской прошивке getState может не отвечать); closed — порт недоступен."""
+    hostport = host if ":" in host else f"{host}:{PORT}"
+    name, port = hostport.rsplit(":", 1)
+    s = socket.socket()
+    s.settimeout(timeout)
+    try:
+        if s.connect_ex((name, int(port))) != 0:
+            return "closed", f"порт {port} на {name} не отвечает"
+    finally:
+        s.close()
+    body = json.dumps(encrypt_payload(deviceid, devicekey, {})).encode()
+    req = urllib.request.Request(f"http://{hostport}/zeroconf/getState", data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "Connection": "close"})
+    raw, status, ctype = b"", None, ""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw, status, ctype = r.read(500), r.status, r.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as e:
+        raw, status, ctype = e.read(500), e.code, e.headers.get("Content-Type", "")
+    except (urllib.error.URLError, OSError) as e:
+        return "open", f"порт открыт, но на запрос getState реле не ответило ({getattr(e, 'reason', e)})"
+    text = raw.decode("utf-8", "replace").strip().replace("\n", " ")[:200]
+    try:
+        resp = json.loads(raw)
+        if resp.get("error", 1) == 0:
+            try:
+                decrypt_response(resp, devicekey)
+                return "verified", "реле ответило, ответ расшифрован ключом"
+            except (ValueError, KeyError):
+                return "open", f"реле ответило, но расшифровать ответ ключом не удалось: {text}"
+        return "open", f"реле ответило ошибкой на getState: {text}"
+    except ValueError:
+        return "open", f"реле ответило не JSON (HTTP {status}, {ctype or 'без типа'}): {text or 'пустой ответ'}"
 
 
 # --------------------------------------------------------------------------
@@ -316,10 +357,9 @@ def discover_scan(deviceid: str, devicekey: str, ip: str | None = None) -> str |
 
 def discover(deviceid: str, devicekey: str, log=print) -> str | None:
     host = discover_mdns(deviceid)
-    if host and probe(host, deviceid, devicekey):
-        return host
     if host:
-        log(f"mDNS указал {host}, но реле с этим ключом там не отвечает; перебираю сеть")
+        return host      # имя службы mDNS содержит device_id, этого достаточно для опознания
+    log("mDNS не нашёл реле, перебираю адреса подсети")
     return discover_scan(deviceid, devicekey)
 
 

@@ -179,10 +179,13 @@ def cmd_lan(client: EweLinkClient, cfg: dict, args) -> None:
             sys.exit("Облако не вернуло devicekey этого реле. Если ключ известен, передайте его: --key КЛЮЧ")
     print("Ключ реле получен." if not args.key else "Ключ взят из параметра --key.")
     host = args.host
+    level = None
     if host:
-        if ewelink_lan.probe(host, device_id, key) is None:
-            sys.exit(f"По адресу {host}:8081 реле не отвечает. Проверьте адрес, что реле в сети и что "
-                     "в приложении eWeLink включено «Управление по локальной сети»")
+        level, detail = ewelink_lan.diagnose(host, device_id, key)
+        if level == "closed":
+            sys.exit(f"{detail}. Проверьте адрес, что реле в сети и что в приложении eWeLink включено "
+                     "«Управление по локальной сети». Если реле только что включали, перезапустите его по питанию")
+        print(f"Проверка {host}: {detail}")
     else:
         print(f"Ищу реле в локальной сети (адрес этого ПК: {ewelink_lan.local_ip() or 'не определён'}), до 30 секунд ...")
         host = ewelink_lan.discover(device_id, key, log=print)
@@ -193,9 +196,15 @@ def cmd_lan(client: EweLinkClient, cfg: dict, args) -> None:
                      "  - брандмауэр Windows разрешает Python в частной сети.\n"
                      "Адрес реле также виден в списке клиентов роутера (имя вида ESP_xxxxxx); "
                      "передайте его: python ewelink_setup.py lan --host 192.168.1.50")
+        level, detail = ewelink_lan.diagnose(host, device_id, key)
+        print(f"Проверка {host}: {detail}")
     info = ewelink_lan.probe(host, device_id, key) or {}
     ewelink_lan.save_state(lan_file_path(cfg), {"deviceid": device_id, "devicekey": key, "host": host})
-    print(f"Реле найдено: {host}. Параметры сохранены в {lan_file_path(cfg)} (файл секретный, не публикуйте).")
+    print(f"Адрес реле {host} и ключ сохранены в {lan_file_path(cfg)} (файл секретный, не публикуйте).")
+    if level != "verified":
+        print("ВНИМАНИЕ: ключ ответом реле не подтверждён (на заводской прошивке это возможно). "
+              "Работает ли управление по локальной сети, покажет проверка открытия ниже: в её результате "
+              "должно быть «по локальной сети». Если там «облако», локальный режим не заработал.")
     pulse, width = info.get("pulse"), info.get("pulseWidth")
     if pulse is not None:
         print(f"Inching: {pulse}" + (f", {width / 1000:g} с" if isinstance(width, (int, float)) else ""))
